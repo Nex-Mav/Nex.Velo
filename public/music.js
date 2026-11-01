@@ -11,6 +11,16 @@
   const srcName = (s) => (s === "youtube" ? "youtube music" : s === "audius" ? "audius" : "soundcloud");
   // every request goes through NV.api, so it reaches the Nex.Velo server even when the page is opened from another host
   const api = (p) => window.NV.api(p);
+  // drawing data for the extra icons (used both on this page and inside the pop-out window)
+  const PATH = {
+    shuffle: '<path d="M16 3h5v5"/><path d="M4 20L21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/>',
+    repeat: '<path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
+    one: '<path d="M10.2 10.2l1.8-1v6.3"/>',
+    vol: '<path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/>',
+    mute: '<path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M22 9l-6 6M16 9l6 6"/>',
+    share: '<path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/>',
+  };
+  const nvi = (inner) => `<svg class="nvi" viewBox="0 0 24 24" aria-hidden="true">${inner}</svg>`;
   const ICON = {
     play: '<svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z" fill="currentColor"/></svg>',
     pause: '<svg viewBox="0 0 24 24"><path d="M7 5v14M17 5v14"/></svg>',
@@ -21,20 +31,24 @@
     x: '<svg class="nvi" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
     prev: '<svg class="nvi" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14"/><path d="M19 5.5v13L9 12z" style="fill:currentColor"/></svg>',
     next: '<svg class="nvi" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14"/><path d="M5 5.5v13L15 12z" style="fill:currentColor"/></svg>',
+    shuffle: nvi(PATH.shuffle), repeat: nvi(PATH.repeat), repeat1: nvi(PATH.repeat + PATH.one),
   };
+  const tfmt = (v) => { v = Math.max(0, Math.floor(v || 0)); return Math.floor(v / 60) + ":" + String(v % 60).padStart(2, "0"); };
 
   let playlists = load("nexvelo.playlists", []); // [{id, name, tracks: []}]
   let recent = load("nexvelo.recent", []); // [track]
   let results = [], lastStatus = null, openPl = null, musicTab = false;
+  let pip = null; // the pop-out player window, when it is open
 
   /* ---------- saved player state ---------- */
   const saved = load("nexvelo.music", {}); // {collapsed, cur, queue, qi, pos}
   let collapsed = !!saved.collapsed;
   let cur = saved.cur || null, queue = saved.queue || [], qi = saved.qi ?? -1, playing = false, pos = saved.pos || 0, dur = saved.cur?.dur || 0;
+  let shuffleOn = !!saved.shuffle, repeatMode = Number(saved.repeat) || 0; // repeat: 0 off, 1 all, 2 one song
   let resumeAt = pos, lastSave = 0;
   const persist = (force) => {
     const now = Date.now(); if (!force && now - lastSave < 4000) return; lastSave = now;
-    store("nexvelo.music", { collapsed, cur, queue: queue.slice(0, 100), qi, pos });
+    store("nexvelo.music", { collapsed, cur, queue: queue.slice(0, 100), qi, pos, shuffle: shuffleOn, repeat: repeatMode });
   };
 
   /* ---------- audio (streamed through this server so the browser never talks to YouTube/SoundCloud) ---------- */
@@ -46,7 +60,7 @@
 
   audio.addEventListener("play", () => { if (!yt.on) setPlaying(true); });
   audio.addEventListener("pause", () => { if (yt.on) return; setPlaying(false); persist(true); });
-  audio.addEventListener("ended", () => { if (!yt.on) next(); });
+  audio.addEventListener("ended", () => { if (!yt.on) next(false); });
   audio.addEventListener("durationchange", () => { if (isFinite(audio.duration) && audio.duration > 0) { dur = audio.duration; paintProgress(); } });
   audio.addEventListener("loadedmetadata", () => {
     if (isFinite(audio.duration)) dur = audio.duration;
@@ -99,7 +113,7 @@
   function stopEmbed() { yt.on = false; try { yt.p?.stopVideo?.(); } catch {} }
   function ytState(e) {
     if (!yt.on) return;
-    if (e.data === 1) { try { yt.p.setVolume(volume * 100); } catch {} setPlaying(true); embedWait?.(true); } else if (e.data === 2) setPlaying(false); else if (e.data === 0) next();
+    if (e.data === 1) { try { yt.p.setVolume(volume * 100); } catch {} setPlaying(true); embedWait?.(true); } else if (e.data === 2) setPlaying(false); else if (e.data === 0) next(false);
   }
   function ytError() {
     const w = embedWait; stopEmbed();
@@ -159,7 +173,23 @@
     if (lyr.key !== key(cur)) loadLyrics(cur);
     audio.paused ? audio.play().catch(playFail) : audio.pause();
   }
-  function next() { if (qi < queue.length - 1) playAt(queue, qi + 1); else { setPlaying(false); } }
+  function pickNext(manual) {
+    if (!queue.length) return -1;
+    if (repeatMode === 2 && !manual) return qi; // repeat one song: when it ends, play it again
+    if (shuffleOn && queue.length > 1) { let i; do { i = Math.floor(Math.random() * queue.length); } while (i === qi); return i; }
+    if (qi < queue.length - 1) return qi + 1;
+    return repeatMode === 1 ? 0 : -1; // end of the list: start over only if repeat is on
+  }
+  function next(natural) { // natural === false means the song ended by itself. a click or a media key passes something else
+    const manual = natural !== false, i = pickNext(manual);
+    if (i < 0) { setPlaying(false); return; }
+    if (i === qi && !manual) { pos = 0; if (yt.on) { yt.p.seekTo(0, true); yt.p.playVideo(); } else { audio.currentTime = 0; audio.play().catch(playFail); } return; }
+    playAt(queue, i);
+  }
+  function toggleShuffle() { shuffleOn = !shuffleOn; persist(true); paintModes(); }
+  function cycleRepeat() { repeatMode = (repeatMode + 1) % 3; persist(true); paintModes(); }
+  let preMute = 0.8;
+  function toggleMute() { if (volume > 0) { preMute = volume; setVolume(0); } else setVolume(preMute || 0.8); }
   function prev() { if (pos > 4) seek(0); else if (qi > 0) playAt(queue, qi - 1); else seek(0); }
   const canSeek = () => isFinite(audio.duration) && audio.duration > 0 && audio.seekable && audio.seekable.length > 0;
   function seek(frac) {
@@ -199,7 +229,13 @@
     $("#mini-t").textContent = cur.title; $("#mini-a").textContent = `${cur.artist} · ${srcName(cur.source)}`;
     paintProgress();
   }
-  function paintProgress() { if ($("#prog").dragging?.()) return; $("#prog i").style.width = dur ? Math.min(100, (pos / dur) * 100) + "%" : "0"; }
+  function paintProgress() {
+    const w = dur ? Math.min(100, Math.max(0, (pos / dur) * 100)) + "%" : "0";
+    const c = tfmt(pos), d = dur ? tfmt(dur) : "0:00";
+    for (const p of ["prog", "np-prog"]) { const bar = $("#" + p); if (bar && !bar.dragging?.()) bar.firstElementChild.style.width = w; }
+    for (const [id, v] of [["#m-cur", c], ["#np-cur", c], ["#m-dur", d], ["#np-dur", d]]) { const el = $(id); if (el && el.textContent !== v && !(id.endsWith("cur") && $(id.startsWith("#m") ? "#prog" : "#np-prog").dragging?.())) el.textContent = v; }
+    paintPip();
+  }
   const calm = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
   async function setCollapsed(v) {
     if (v === collapsed) return;
@@ -222,15 +258,20 @@
   $("#m-next").addEventListener("click", next);
   $("#m-prev").addEventListener("click", prev);
   $("#mini-info").addEventListener("click", () => openMusic());
-  { // drag the bar to move through the song (the song jumps when you let go, so it doesn't stutter)
-    const bar = $("#prog"); let drag = false;
+  // click or drag a bar to play from that spot (the song jumps when you let go, so it doesn't stutter). works on both players
+  function bindSeek(bar, curSel) {
+    let drag = false;
     const frac = (e) => { const r = bar.getBoundingClientRect(); return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); };
-    bar.addEventListener("pointerdown", (e) => { drag = true; bar.setPointerCapture(e.pointerId); $("#prog i").style.width = frac(e) * 100 + "%"; });
-    bar.addEventListener("pointermove", (e) => { if (drag) $("#prog i").style.width = frac(e) * 100 + "%"; });
-    const end = (e) => { if (!drag) return; drag = false; seek(frac(e)); };
-    bar.addEventListener("pointerup", end); bar.addEventListener("pointercancel", () => { drag = false; paintProgress(); });
+    const show = (f) => { bar.firstElementChild.style.width = f * 100 + "%"; if (dur) $(curSel).textContent = tfmt(f * dur); };
+    bar.addEventListener("pointerdown", (e) => { drag = true; bar.setPointerCapture(e.pointerId); show(frac(e)); });
+    bar.addEventListener("pointermove", (e) => { if (drag) show(frac(e)); });
+    bar.addEventListener("pointerup", (e) => { if (!drag) return; drag = false; seek(frac(e)); });
+    bar.addEventListener("pointercancel", () => { drag = false; paintProgress(); });
+    bar.setAttribute("role", "slider"); bar.tabIndex = 0; bar.setAttribute("aria-label", "Song position");
+    bar.addEventListener("keydown", (e) => { const d = { ArrowLeft: -5, ArrowRight: 5 }[e.key]; if (d && dur) { e.preventDefault(); seek(Math.min(1, Math.max(0, (pos + d) / dur))); } });
     bar.dragging = () => drag;
   }
+  bindSeek($("#prog"), "#m-cur"); bindSeek($("#np-prog"), "#np-cur");
   $("#m-play").innerHTML = ICON.play; $("#np-play").innerHTML = ICON.play;
 
   /* ---------- the fold-away arrows (our own, no emoji), the volume control and the styles for them ---------- */
@@ -277,6 +318,7 @@
     audio.volume = volume; try { yt.p?.setVolume?.(volume * 100); } catch {}
     $("#m-vbar i").style.width = volume * 100 + "%"; $("#m-vbar").setAttribute("aria-valuenow", Math.round(volume * 100));
     if (!quiet) store("nexvelo.volume", volume);
+    if (typeof paintPip === "function") paintPip();
   }
   {
     const bar = $("#m-vbar"); let drag = false;
@@ -299,6 +341,18 @@
     }
     requestAnimationFrame(tick);
   })();
+  $("#m-shuffle").addEventListener("click", toggleShuffle); $("#np-shuffle").addEventListener("click", toggleShuffle);
+  $("#m-repeat").addEventListener("click", cycleRepeat); $("#np-repeat").addEventListener("click", cycleRepeat);
+  function paintModes() {
+    for (const p of ["m", "np"]) {
+      const sh = $("#" + p + "-shuffle"), rp = $("#" + p + "-repeat"); if (!sh || !rp) continue;
+      if (!sh.firstChild) sh.innerHTML = ICON.shuffle;
+      sh.classList.toggle("on", shuffleOn); sh.setAttribute("aria-pressed", shuffleOn); sh.title = shuffleOn ? "Shuffle: on" : "Shuffle: off";
+      rp.classList.toggle("on", repeatMode > 0); rp.setAttribute("aria-pressed", repeatMode > 0); rp.title = ["Repeat: off", "Repeat: all", "Repeat: one song"][repeatMode];
+      const want = repeatMode === 2 ? "one" : "all"; if (rp.dataset.i !== want) { rp.dataset.i = want; rp.innerHTML = repeatMode === 2 ? ICON.repeat1 : ICON.repeat; }
+    }
+    paintPip();
+  }
   $("#np-play").addEventListener("click", toggle); $("#np-next").addEventListener("click", next); $("#np-prev").addEventListener("click", prev);
   $("#np-pop").addEventListener("click", () => popOut()); $("#m-pop").addEventListener("click", () => popOut());
 
@@ -340,35 +394,94 @@
     audio.currentTime = lyr.synced[+p.dataset.i].t; if (audio.paused) audio.play().catch(() => {});
   });
 
-  /* ---------- pop-out controller (small floating window, no lyrics) ---------- */
-  let pip = null;
-  // icons for the pop-out window (it is a separate page, so they carry their own sizes and colours)
-  const PIP = (inner) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
-  const PIP_PREV = PIP('<path d="M6 5v14"/><path d="M19 5.5v13L9 12z" style="fill:currentColor"/>'), PIP_NEXT = PIP('<path d="M18 5v14"/><path d="M5 5.5v13L15 12z" style="fill:currentColor"/>');
-  const PIP_PLAY = PIP('<path d="M7 4.5l12 7.5-12 7.5z" style="fill:currentColor"/>'), PIP_PAUSE = PIP('<path d="M8 5v14M16 5v14"/>');
+  /* ---------- pop-out player: a round, spinning cover over the song's picture, a seek bar, the controls and a volume bar ---------- */
+  const PIPI = (inner, size = 18) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+  const PI = {
+    prev: PIPI('<path d="M6 5v14"/><path d="M19 5.5v13L9 12z" style="fill:currentColor"/>'), next: PIPI('<path d="M18 5v14"/><path d="M5 5.5v13L15 12z" style="fill:currentColor"/>'),
+    play: PIPI('<path d="M7 4.5l12 7.5-12 7.5z" style="fill:currentColor"/>', 26), pause: PIPI('<path d="M8 5v14M16 5v14"/>', 26),
+    shuffle: PIPI(PATH.shuffle), repeat: PIPI(PATH.repeat), repeat1: PIPI(PATH.repeat + PATH.one), vol: PIPI(PATH.vol), mute: PIPI(PATH.mute), share: PIPI(PATH.share),
+    check: PIPI('<path d="M5 12.5l4.5 4.5L19 7.5"/>'), minus: PIPI('<path d="M5 12h14"/>', 14), plus: PIPI('<path d="M12 5v14M5 12h14"/>', 14),
+  };
+  const PIP_CSS = `<style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#000;color:#fff;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
+#bg{position:fixed;inset:-40px;background:#111 center/cover no-repeat;filter:blur(30px) saturate(1.3);transform:scale(1.15)}
+#shade{position:fixed;inset:0;background:linear-gradient(rgba(0,0,0,.3),rgba(0,0,0,.78))}
+.wrap{position:relative;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:11px;padding:14px 18px}
+.disc{width:148px;height:148px;border-radius:50%;overflow:hidden;background:#1d1d1d;flex:none;box-shadow:0 10px 34px rgba(0,0,0,.55);animation:spin 6s linear infinite}
+.disc.off{animation-play-state:paused}
+.disc img{width:100%;height:100%;object-fit:cover;display:block;-webkit-mask-image:radial-gradient(circle closest-side,transparent 0 6%,#000 7%);mask-image:radial-gradient(circle closest-side,transparent 0 6%,#000 7%)}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.disc{animation:none}}
+.meta{text-align:center;max-width:100%}
+.meta b{display:block;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta span{display:block;font-size:12px;opacity:.72;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seek{display:flex;align-items:center;gap:9px;width:100%;font-size:11px;font-variant-numeric:tabular-nums}
+.seek span{min-width:34px}.seek span:last-child{text-align:right}
+.bar{position:relative;flex:1;height:5px;border-radius:3px;background:rgba(255,255,255,.28);cursor:pointer;touch-action:none}
+.bar::after{content:"";position:absolute;inset:-9px 0}
+.bar i{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:inherit;background:#fff;pointer-events:none}
+.ctl{display:flex;align-items:center;justify-content:center;gap:7px}
+button{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;padding:0;background:#2b2b2b;color:#fff;border:0;border-radius:50%;cursor:pointer;transition:background .15s,transform .1s}
+button:hover{background:#151515}
+button:active{transform:scale(.93)}
+button.on{background:#fff;color:#000}
+button.on:hover{background:#d4d4d4}
+button.big{width:58px;height:58px;background:#fff;color:#000}
+button.big:hover{background:#cfcfcf}
+.vol{display:flex;align-items:center;gap:10px;width:80%}
+.vol button{width:26px;height:26px}
+</style>`;
+  const PIP_HTML = `<div id="bg"></div><div id="shade"></div><div class="wrap">
+<div class="disc off" id="disc"><img id="c" alt=""></div>
+<div class="meta"><b id="t"></b><span id="a"></span></div>
+<div class="seek"><span id="cur">0:00</span><div class="bar" id="bar"><i id="f"></i></div><span id="dur">0:00</span></div>
+<div class="ctl"><button id="vm" aria-label="Mute"></button><button id="sh" aria-label="Shuffle"></button><button id="p" aria-label="Previous song"></button><button class="big" id="pl" aria-label="Play or pause"></button><button id="n" aria-label="Next song"></button><button id="rp" aria-label="Repeat"></button><button id="sd" aria-label="Copy the song name"></button></div>
+<div class="vol"><button id="vd" aria-label="Volume down"></button><div class="bar" id="vb"><i id="vf"></i></div><button id="vu" aria-label="Volume up"></button></div>
+</div>`;
   function paintPip() {
     if (!pip || !cur) return;
-    const d = pip.document, $$ = (i) => d.getElementById(i);
-    $$("c").src = cur.thumb || ""; $$("t").textContent = cur.title; $$("a").textContent = `${cur.artist} · ${srcName(cur.source)}`;
-    $$("pl").innerHTML = playing ? PIP_PAUSE : PIP_PLAY; $$("f").style.width = dur ? Math.min(100, (pos / dur) * 100) + "%" : "0";
+    let d, g; try { d = pip.document; g = (i) => d.getElementById(i); if (!g("c")) return; } catch { return; }
+    const thumb = cur.thumb || "";
+    if (g("c").dataset.src !== thumb) { g("c").dataset.src = thumb; g("c").src = thumb; g("bg").style.backgroundImage = thumb ? `url("${thumb.replace(/"/g, "%22")}")` : "none"; }
+    g("t").textContent = cur.title; g("a").textContent = `${cur.artist} · ${srcName(cur.source)}`;
+    g("disc").classList.toggle("off", !playing);
+    if (g("pl").dataset.s !== String(playing)) { g("pl").dataset.s = String(playing); g("pl").innerHTML = playing ? PI.pause : PI.play; }
+    if (!g("bar").dragging?.()) { g("f").style.width = dur ? Math.min(100, Math.max(0, (pos / dur) * 100)) + "%" : "0"; g("cur").textContent = tfmt(pos); }
+    g("dur").textContent = dur ? tfmt(dur) : "0:00";
+    g("sh").classList.toggle("on", shuffleOn); if (!g("sh").firstChild) g("sh").innerHTML = PI.shuffle;
+    g("rp").classList.toggle("on", repeatMode > 0); const rk = String(repeatMode === 2); if (g("rp").dataset.k !== rk || !g("rp").firstChild) { g("rp").dataset.k = rk; g("rp").innerHTML = repeatMode === 2 ? PI.repeat1 : PI.repeat; }
+    const mk = String(volume === 0); if (g("vm").dataset.k !== mk || !g("vm").firstChild) { g("vm").dataset.k = mk; g("vm").innerHTML = volume === 0 ? PI.mute : PI.vol; }
+    if (!g("vb").dragging?.()) g("vf").style.width = volume * 100 + "%";
   }
-  setInterval(() => pip && paintPip(), 400);
+  setInterval(() => pip && paintPip(), 250);
   async function popOut() {
     if (pip) { pip.close(); pip = null; return; }
     if (!cur) return toast("play a song first");
-    if (!("documentPictureInPicture" in window)) return toast("this browser can't pop out the controller. use the media controls in its toolbar instead.");
+    if (!("documentPictureInPicture" in window)) return toast("this browser can't pop out the player. use the media controls in its toolbar instead.");
     try {
-      pip = await documentPictureInPicture.requestWindow({ width: 360, height: 150 });
-      const d = pip.document;
-      d.body.style.cssText = "margin:0;background:#000;color:#fff;font-family:system-ui,sans-serif;display:flex;align-items:center;gap:12px;padding:12px;overflow:hidden";
-      d.body.innerHTML = '<img id="c" style="width:76px;height:76px;border-radius:12px;object-fit:cover;background:#111;flex:none"><div style="flex:1;min-width:0"><div id="t" style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div><div id="a" style="font-size:12px;opacity:.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div><div style="display:flex;gap:6px;margin-top:8px"><button id="p" aria-label="Previous song"></button><button id="pl" aria-label="Play or pause"></button><button id="n" aria-label="Next song"></button></div><div id="bar" style="height:6px;background:#333;border-radius:3px;margin-top:10px;cursor:pointer"><i id="f" style="display:block;height:100%;width:0;background:#fff;border-radius:3px"></i></div></div>';
-      d.head.insertAdjacentHTML("beforeend", "<style>button{display:inline-flex;align-items:center;justify-content:center;background:#2b2b2b;color:#fff;border:0;border-radius:10px;width:42px;height:34px;cursor:pointer;transition:background .15s}button:hover{background:#161616}button:active{transform:scale(.94)}</style>");
-      d.getElementById("p").innerHTML = PIP_PREV; d.getElementById("n").innerHTML = PIP_NEXT; d.getElementById("pl").innerHTML = playing ? PIP_PAUSE : PIP_PLAY;
-      d.getElementById("p").onclick = prev; d.getElementById("pl").onclick = toggle; d.getElementById("n").onclick = next;
-      d.getElementById("bar").onclick = (e) => { const r = e.currentTarget.getBoundingClientRect(); seek((e.clientX - r.left) / r.width); };
+      pip = await documentPictureInPicture.requestWindow({ width: 360, height: 480 });
+      const d = pip.document, g = (i) => d.getElementById(i);
+      d.head.insertAdjacentHTML("beforeend", PIP_CSS); d.body.innerHTML = PIP_HTML;
+      g("p").innerHTML = PI.prev; g("n").innerHTML = PI.next; g("vd").innerHTML = PI.minus; g("vu").innerHTML = PI.plus; g("sd").innerHTML = PI.share;
+      g("p").onclick = prev; g("pl").onclick = toggle; g("n").onclick = next; g("sh").onclick = toggleShuffle; g("rp").onclick = cycleRepeat;
+      g("vm").onclick = toggleMute; g("vd").onclick = () => setVolume(volume - 0.1); g("vu").onclick = () => setVolume(volume + 0.1);
+      g("sd").onclick = async () => { // copies "artist - title" so it can be pasted into a message
+        try { await (pip.navigator.clipboard || navigator.clipboard).writeText(`${cur.artist} - ${cur.title}`); } catch {}
+        g("sd").innerHTML = PI.check; setTimeout(() => { try { if (pip) g("sd").innerHTML = PI.share; } catch {} }, 1300);
+      };
+      const dragBar = (bar, onMove, onEnd) => { // click or drag on the bar
+        let on = false; const f = (e) => { const r = bar.getBoundingClientRect(); return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); };
+        bar.addEventListener("pointerdown", (e) => { on = true; bar.setPointerCapture(e.pointerId); onMove(f(e)); });
+        bar.addEventListener("pointermove", (e) => { if (on) onMove(f(e)); });
+        bar.addEventListener("pointerup", (e) => { if (on) { on = false; onEnd(f(e)); } });
+        bar.dragging = () => on;
+      };
+      dragBar(g("bar"), (f) => { g("f").style.width = f * 100 + "%"; if (dur) g("cur").textContent = tfmt(f * dur); }, (f) => seek(f));
+      dragBar(g("vb"), (f) => { g("vf").style.width = f * 100 + "%"; setVolume(f, true); }, (f) => setVolume(f));
       pip.addEventListener("pagehide", () => { pip = null; });
       paintPip();
-    } catch (e) { pip = null; toast("couldn't open the pop-out controller"); }
+    } catch (e) { pip = null; toast("couldn't open the pop-out player"); }
   }
 
   /* ---------- recommended (shown before you search, so the page isn't empty) ---------- */
@@ -544,6 +657,7 @@
     if (musicTab) syncLyrics(true);
     if (musicTab) loadRec();
   };
+  paintModes();
   window.NV.applyMusicToggle = applyMusicToggle;
   window.NV.musicShowTab = (t) => showTab(t);
   window.NV.refreshMusicChips = refreshMusicChips;
