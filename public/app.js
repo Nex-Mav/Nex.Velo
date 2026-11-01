@@ -9,7 +9,7 @@ get: (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d 
 set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
 del: (k) => { try { localStorage.removeItem(k); } catch {} },
 };
-const VERSION = "0.99.11";
+const VERSION = "1.00.0";
 // small icons of our own (used instead of text symbols)
 const ICON_X = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 const ICON_EDIT = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4-1 11-11-3-3L5 16z"/></svg>';
@@ -709,15 +709,13 @@ const APPS = [
 ["games", "Games", () => settings.games, () => openPage("games")],
 ["music", "Music", () => settings.music, () => openPage("music")],
 ["ai", "AI", () => settings.ai, () => openPage("ai")],
-["servers", "Servers", () => true, () => openSettings("servers")],
-["diagnostics", "Diagnostics", () => true, () => openSettings("diagnostics")],
-["settings", "Settings", () => true, () => openSettings()],
 ];
 let appsOpen = false, appsTimer = 0;
 function openApps() {
 const menu = $("#apps-menu"), btn = $("#apps-btn");
 clearTimeout(appsTimer);
-menu.innerHTML = APPS.filter((a) => a[2]()).map((a) => `<button class="app-tile" role="menuitem" data-app="${a[0]}">${APP_SVG[a[0]]}<span>${esc(a[1])}</span></button>`).join("");
+const shown = APPS.filter((a) => a[2]());
+menu.innerHTML = shown.length ? shown.map((a) => `<button class="app-tile" role="menuitem" data-app="${a[0]}">${APP_SVG[a[0]]}<span>${esc(a[1])}</span></button>`).join("") : '<div class="empty">no apps are turned on. turn them on in Settings → apps.</div>';
 const r = btn.getBoundingClientRect();
 menu.style.top = r.bottom + 8 + "px"; menu.style.right = Math.max(8, innerWidth - r.right - 4) + "px"; menu.style.left = "auto";
 menu.hidden = false; menu.className = "in"; appsOpen = true;
@@ -743,7 +741,7 @@ addEventListener("blur", () => closeApps()); // clicking into a page frame
 const STEPS = [
 ["#tabs", "these are your tabs. every tab is its own proxied page."],
 ["#new-tab", "open a new tab here."],
-["#apps-btn", "the nine dots open all your apps: games, music, ai, servers and diagnostics."],
+["#apps-btn", "the nine dots open your apps: games, music and ai."],
 ["#open-settings", "themes, wallpapers, your wisp server and more."],
 [".view.active .omni", "type a search or a web address and press enter."],
 ];
