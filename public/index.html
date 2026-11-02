@@ -391,9 +391,22 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 #apps-menu .empty{grid-column:1/-1;padding:1rem .5rem;text-align:center;color:var(--dim);font-size:.8125rem}
 @media (prefers-reduced-motion:reduce){#apps-menu.in,#apps-menu.out{animation:none}}
 /* diagnostics (inside Settings) */
-#sec-diagnostics.on{display:flex;flex-direction:column;height:100%}
-#sec-diagnostics h2{margin-bottom:1rem}
-#diag-frame{flex:1;min-height:0;width:100%;border:0;border-radius:.875rem;background:transparent}
+.dg .dgbar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;position:sticky;top:-2rem;z-index:2;margin:0 0 1rem;padding:.5rem 0;background:var(--panel)}
+#dg-summary{margin-left:auto;color:var(--dim);font-size:.8125rem;font-variant-numeric:tabular-nums}
+.dgh{margin:1.5rem 0 .5rem;font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.dgt{background:var(--btn);border-left:4px solid var(--dim);border-radius:.75rem;padding:.6rem .8rem;margin-bottom:.5rem}
+.dgt.pass{border-left-color:#2fa862}.dgt.fail{border-left-color:#e5484d}.dgt.info{border-left-color:#4f86f7}.dgt.run{border-left-color:#d9a21b}
+.dgrow{display:flex;gap:.6rem;align-items:center}
+.dgname{font-weight:600;flex:1;min-width:0;font-size:.875rem}
+.dgtag{font-size:.6875rem;letter-spacing:.06em;border-radius:999px;padding:.1rem .5rem;border:1px solid currentColor;color:var(--dim)}
+.dgt.pass .dgtag{color:#2fa862}.dgt.fail .dgtag{color:#e5484d}.dgt.info .dgtag{color:#4f86f7}.dgt.run .dgtag{color:#d9a21b}
+.dgms{color:var(--dim);font-size:.75rem;font-variant-numeric:tabular-nums}
+.dgslow{font-size:.6875rem;color:var(--dim);border:1px dashed var(--dim);border-radius:999px;padding:.05rem .4rem}
+.dgdetail{margin:.35rem 0 0;font-size:.8125rem;line-height:1.45;color:var(--dim);white-space:pre-wrap;word-break:break-word}
+.dgkids{margin:.4rem 0 0;padding:0;list-style:none;font-size:.8125rem;line-height:1.45}
+.dgkids li{padding:.15rem 0 .15rem .75rem;border-left:2px solid var(--dim);margin-bottom:.15rem;word-break:break-word}
+.dgkids li.g{border-left-color:#2fa862}.dgkids li.b{border-left-color:#e5484d}
+.dgwhy{color:var(--dim)}
 #g-back{display:inline-flex;align-items:center;gap:.375rem}
 #g-back svg{width:1rem;height:1rem;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 /* v5: every button starts grey and goes darker when hovered */
@@ -508,7 +521,8 @@ button.ib:hover,button.btn:hover,button.nb:hover,.mtabs button:hover,#ai-list bu
 </div>
 <div class="sec" id="sec-diagnostics">
 <h2>diagnostics</h2>
-<iframe id="diag-frame" title="Diagnostics"></iframe>
+<p>tests this browser, the server, music, games and the AI, and shows what works and what fails. press copy report to share the results.</p>
+<div class="dg" id="diag-root"></div>
 </div>
 <div class="sec" id="sec-account">
 <h2>account</h2>
@@ -531,7 +545,7 @@ button.ib:hover,button.btn:hover,button.nb:hover,.mtabs button:hover,#ai-list bu
 <section class="page" id="page-games">
 <div class="gpage">
 <div id="g-browse" class="gbrowse">
-<div class="ghead"><div class="mtabs" id="gtabs"><button class="on" data-g="cherri">cherri</button><button data-g="gn">gn-math</button><button data-g="duckmath">duckmath</button><button data-g="weslack">weslack</button></div>
+<div class="ghead"><div class="mtabs" id="gtabs"><button class="on" data-g="cherri">cherri</button><button data-g="gn">gn-math</button><button data-g="obsidian">obsidian</button><button data-g="ugs">ugs</button><button data-g="duckmath">duckmath</button><button data-g="weslack">weslack</button></div>
 <input id="gq" type="text" placeholder="search games" autocomplete="off" spellcheck="false"><small id="gcount"></small></div>
 <div class="gscroll"><div id="ggrid" class="ggrid"></div><button class="btn" id="gmore" hidden>show more</button><div class="msg" id="gmsg"></div></div>
 </div>
@@ -635,6 +649,266 @@ button.ib:hover,button.btn:hover,button.nb:hover,.mtabs button:hover,#ai-list bu
 <div id="toast" role="status"></div>
 <div id="tour" hidden><div id="tour-hl"></div><div id="tour-card"><p id="tour-text"></p><div class="row"><button class="btn primary" id="tour-next">next</button><button class="btn" id="tour-skip">skip</button></div></div></div>
 <script>
+/* Diagnostics tool (drawn inside Settings > diagnostics) */
+window.__nvDiagMount = (root) => {
+  "use strict";
+  const url = (p) => NV.api(p); // NV.api adds the server address when the page and the server are on different hosts
+  const $ = (s, r = root) => r.querySelector(s);
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const bytes = (n) => (n > 1e6 ? (n / 1e6).toFixed(1) + " MB" : n > 1e3 ? Math.round(n / 1e3) + " KB" : n + " B");
+  const withTimeout = (p, ms, label) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error((label || "this test") + " took longer than " + Math.round(ms / 1000) + " seconds")), ms))]);
+
+  async function getJSON(path, ms = 25000) {
+    const r = await withTimeout(fetch(url(path), { cache: "no-store" }), ms, path);
+    const text = await r.text(); let d = null; try { d = JSON.parse(text); } catch {}
+    if (!r.ok) throw new Error("HTTP " + r.status + (d && (d.error || d.message) ? ": " + (d.error || d.message) : ""));
+    return d ?? text;
+  }
+  // reads at most `max` bytes, then stops the download
+  async function sniff(path, headers, max) {
+    const r = await withTimeout(fetch(url(path), { headers, cache: "no-store" }), 30000, path);
+    const type = r.headers.get("content-type") || "", len = r.headers.get("content-length");
+    let got = 0, head = "";
+    if (r.ok || r.status === 206) {
+      const rd = r.body.getReader(), dec = new TextDecoder("utf-8", { fatal: false });
+      while (got < max) { const { value, done } = await rd.read(); if (done) break; got += value.length; if (head.length < 400000) head += dec.decode(value, { stream: true }); }
+      try { rd.cancel(); } catch {}
+    } else { try { head = (await r.text()).slice(0, 600); } catch {} }
+    return { status: r.status, ok: r.ok || r.status === 206, type, len, got, head };
+  }
+
+  /* ---------- shared lookups (each is fetched once and reused by later tests) ---------- */
+  const memo = {};
+  const once = (k, fn) => (memo[k] ||= fn());
+  const SONG = "blinding lights the weeknd";
+  const music = () => once("music", () => getJSON("/api/music/search?q=" + encodeURIComponent(SONG)));
+  const games = (src) => once("games:" + src, async () => (await getJSON("/api/games/list?src=" + src, 90000)).games || []);
+  const streamPath = (t) => `/api/music/stream?source=${t.source}&id=${encodeURIComponent(t.id)}&q=${encodeURIComponent((t.artist + " " + t.title).trim())}`;
+  const picks = (list) => [list[0], list[Math.floor(list.length / 2)]].filter((g, i, a) => g && a.indexOf(g) === i);
+
+  /* ---------- the tests ---------- */
+  const tests = [];
+  const def = (group, name, opts, fn) => tests.push({ id: "t" + tests.length, group, name, slow: !!opts.slow, fn, state: "idle", ms: 0, detail: "", kids: [] });
+
+  // --- this browser
+  def("This browser", "Browser storage (settings, history and playlists need it)", {}, async () => {
+    localStorage.setItem("nv-diag", "1"); if (localStorage.getItem("nv-diag") !== "1") throw new Error("localStorage did not keep a value"); localStorage.removeItem("nv-diag");
+    await new Promise((res, rej) => { const q = indexedDB.open("nv-diag"); q.onsuccess = () => { q.result.close(); indexedDB.deleteDatabase("nv-diag"); res(); }; q.onerror = () => rej(q.error || new Error("IndexedDB refused to open")); });
+    return "localStorage and IndexedDB both work";
+  });
+  def("This browser", "Browser features", {}, async () => {
+    const f = [
+      ["WebSocket (the proxy connection)", "WebSocket" in window], ["Service workers (the proxy)", "serviceWorker" in navigator], ["WebAssembly", typeof WebAssembly === "object"],
+      ["Audio", "AudioContext" in window || "webkitAudioContext" in window], ["Media keys / lock screen controls", "mediaSession" in navigator], ["Pop-out player (Document Picture-in-Picture)", "documentPictureInPicture" in window],
+      ["Speech recognition (voice chat)", "SpeechRecognition" in window || "webkitSpeechRecognition" in window], ["Speech playback", "speechSynthesis" in window],
+      ["Fullscreen", !!document.fullscreenEnabled], ["Clipboard", !!navigator.clipboard], ["Screen sharing", !!navigator.mediaDevices?.getDisplayMedia],
+      ["Cross-origin isolated", !!window.crossOriginIsolated],
+    ];
+    return { state: "info", detail: f.filter((x) => x[1]).length + " of " + f.length + " features available", kids: f.map(([n, ok]) => ({ name: n, ok: ok ? true : null, detail: ok ? "available" : "not available (optional)" })) };
+  });
+  def("This browser", "Service workers", {}, async () => {
+    if (!navigator.serviceWorker) throw new Error("this browser has no service workers, so the proxy cannot run");
+    const regs = await navigator.serviceWorker.getRegistrations();
+    return { state: "info", detail: regs.length ? regs.length + " registered on this site" : "none registered on this site yet (open Nex.Velo once so the proxy can register)", kids: regs.map((r) => ({ name: r.scope, ok: !!r.active, detail: r.active ? "active" : "not active yet" })) };
+  });
+  def("This browser", "Can this device reach the sites Nex.Velo uses?", {}, async () => {
+    const sites = [
+      ["cdn.jsdelivr.net (game files)", "https://cdn.jsdelivr.net/npm/lodash@4/package.json"], ["raw.githubusercontent.com (games, music data)", "https://raw.githubusercontent.com/github/gitignore/main/Go.gitignore"],
+      ["gitlab.com (Cherri games)", "https://gitlab.com/gitlab-org/gitlab/-/raw/master/LICENSE"], ["huggingface.co (AI model)", "https://huggingface.co/api/models/HuggingFaceTB/SmolLM2-360M-Instruct"],
+      ["api.audius.co (music)", "https://api.audius.co/v1/tracks/trending?app_name=NexVelo"], ["soundcloud.com (music)", "https://soundcloud.com/favicon.ico"], ["www.youtube.com (music)", "https://www.youtube.com/favicon.ico"],
+    ];
+    const kids = await Promise.all(sites.map(async ([name, u]) => {
+      const s = performance.now();
+      try { await withTimeout(fetch(u, { mode: "no-cors", cache: "no-store" }), 9000, name); return { name, ok: true, detail: "reachable (" + Math.round(performance.now() - s) + " ms)" }; }
+      catch { return { name, ok: false, detail: "blocked or unreachable from this device" }; }
+    }));
+    return { state: "info", detail: "This is the browser's own network. A blocked site here is a reason a page could come up blank. The server fetches most things for you, so some of these do not matter.", kids };
+  });
+
+  // --- the server
+  def("Server", "Server answers", {}, async () => { const s = performance.now(); const d = await getJSON("/api/live"); return "answered in " + Math.round(performance.now() - s) + " ms, " + d.count + " visitor(s) online"; });
+  def("Server", "Version", {}, async () => {
+    const found = [];
+    for (const f of ["/version.json", "/version.js"]) {
+      try { const r = await withTimeout(fetch(f + "?t=" + Date.now(), { cache: "no-store" }), 8000, f); if (r.ok) found.push(f + " says " + JSON.parse(await r.text()).version); else found.push(f + " answered HTTP " + r.status); }
+      catch (e) { found.push(f + ": " + (e.message || e)); }
+    }
+    return { state: found.some((x) => x.includes(" says ")) ? "info" : "fail", detail: "this page is v" + NV.VERSION + "\n" + found.join("\n") };
+  });
+  def("Server", "Wisp connection (the proxy's tunnel)", {}, async () => {
+    const sameHost = (location.protocol === "https:" ? "wss" : "ws") + "://" + location.host + "/wisp/";
+    const inUse = NV.activeWisp(), list = [...new Set([inUse, NV.settings.wisp, NV.defaultWisp, sameHost])];
+    const kids = [];
+    for (const u of list) { const s = performance.now(); const ok = await NV.testWisp(u, 6000); kids.push({ name: u + (u === inUse ? "  (in use)" : ""), ok, detail: ok ? "connected in " + Math.round(performance.now() - s) + " ms" : "couldn't connect" }); }
+    const using = kids.find((k) => k.name.endsWith("(in use)"));
+    return { state: using && using.ok ? "pass" : kids.some((k) => k.ok) ? "info" : "fail", detail: using && using.ok ? "the Wisp server the proxy is using answers" : "the Wisp server the proxy is using did not answer", kids };
+  });
+  def("Server", "Server dependency check (every outside service the server uses)", {}, async () => {
+    const d = await getJSON("/api/diag", 90000);
+    const kids = Object.entries(d.checks || {}).map(([k, v]) => ({ name: k, ok: v.ok, detail: (v.ok ? v.info : v.error) + " (" + v.ms + " ms)" }));
+    kids.unshift({ name: "server memory", ok: d.enoughMemoryForModel !== false, detail: "using " + d.rssMB + " MB, node " + d.node });
+    if (d.nexAi) kids.push({ name: "Nex.AI model", ok: d.nexAi.error ? false : null, detail: (d.nexAi.ready ? "loaded" : d.nexAi.loading ? "loading " + d.nexAi.progress : "not loaded yet") + " (" + d.nexAi.model + ")" + (d.nexAi.error ? " | " + d.nexAi.error : "") });
+    return { detail: kids.filter((k) => k.ok === false).length ? "something below failed" : "everything the server needs answered", kids };
+  });
+
+  // --- music
+  def("Music", "Music search (YouTube Music, SoundCloud, Audius)", {}, async () => {
+    const d = await music(); const bySrc = {};
+    for (const r of d.results || []) bySrc[r.source] = (bySrc[r.source] || 0) + 1;
+    const kids = ["youtube", "soundcloud", "audius"].map((s) => ({ name: s, ok: !!bySrc[s], detail: bySrc[s] ? bySrc[s] + " result(s)" : (d.errors && d.errors[s]) || "no results" }));
+    if (!(d.results || []).length) throw new Error("no results from any source: " + Object.entries(d.errors || {}).map(([k, v]) => k + " (" + v + ")").join(", "));
+    return { state: kids.some((k) => !k.ok) ? "info" : "pass", detail: (d.results || []).length + " results, top: " + d.results[0].artist + " - " + d.results[0].title + " (" + d.results[0].source + ")", kids };
+  });
+  def("Music", "Music audio streams (the server fetches the first bytes of a song from each source)", {}, async () => {
+    const d = await music(), kids = [];
+    for (const src of ["youtube", "soundcloud", "audius"]) {
+      const t = (d.results || []).find((r) => r.source === src);
+      if (!t) { kids.push({ name: src, ok: null, detail: "no search result from this source to test" }); continue; }
+      const q = `/api/music/stream?source=${t.source}&id=${encodeURIComponent(t.id)}&q=`; // no fallback on purpose: this tests the source itself
+      try { const r = await sniff(q, { range: "bytes=0-4095" }, 4096); kids.push({ name: src + ": " + t.title, ok: r.ok && r.got > 0, detail: r.ok ? "HTTP " + r.status + ", " + (r.type || "unknown type") + ", got " + bytes(r.got) : "HTTP " + r.status + " " + r.head.slice(0, 220) }); }
+      catch (e) { kids.push({ name: src + ": " + t.title, ok: false, detail: String(e.message || e) }); }
+    }
+    return { detail: kids.filter((k) => k.ok).length + " of 3 sources can deliver audio", kids, state: kids.some((k) => k.ok) ? (kids.some((k) => k.ok === false) ? "info" : "pass") : "fail" };
+  });
+  def("Music", "Music playback (a real song plays in this browser, quietly)", {}, async () => {
+    const d = await music(); const t = (d.results || [])[0]; if (!t) throw new Error("no song to play");
+    const a = new Audio(); a.volume = 0.05; a.src = url(streamPath(t));
+    try {
+      try { await a.play(); } catch (e) { if (e.name === "NotAllowedError") throw new Error("the browser blocked autoplay. press this test's Run button on its own"); throw new Error("the audio would not start: " + (a.error ? "code " + a.error.code + " " + (a.error.message || "") : e.message)); }
+      await withTimeout(new Promise((res, rej) => { const iv = setInterval(() => { if (a.currentTime > 1.2) { clearInterval(iv); res(); } if (a.error) { clearInterval(iv); rej(new Error("audio error " + a.error.code + " " + (a.error.message || ""))); } }, 200); }), 25000, "playback");
+      return "played " + a.currentTime.toFixed(1) + "s of " + t.artist + " - " + t.title + ". length " + (isFinite(a.duration) ? Math.round(a.duration) + "s" : "unknown (this stream cannot be skipped around)");
+    } finally { try { a.pause(); a.removeAttribute("src"); a.load(); } catch {} }
+  });
+  def("Music", "Lyrics", {}, async () => { const t = ((await music()).results || [])[0]; if (!t) throw new Error("no song to look up"); const d = await getJSON(`/api/lyrics?title=${encodeURIComponent(t.title)}&artist=${encodeURIComponent(t.artist)}&dur=${t.dur || 0}`); if (!d.found) return { state: "info", detail: "no lyrics found for " + t.title + " (normal for some songs)" }; return (d.synced && d.synced.length ? d.synced.length + " timed lines" : "plain lyrics") + " for " + d.title; });
+  def("Music", "Recommended songs", { slow: true }, async () => { const d = await getJSON("/api/music/recommended", 90000); if (!(d.tracks || []).length) throw new Error("no recommendations came back"); return d.tracks.length + " songs"; });
+
+  // --- games
+  const SRCS = [["cherri", "Cherri"], ["gn", "GN Math"], ["obsidian", "Obsidian"], ["ugs", "UGS"]];
+  def("Games", "Game lists (Cherri, GN Math, Obsidian, UGS)", {}, async () => {
+    const kids = [];
+    for (const [k, label] of SRCS) { try { const g = await games(k); kids.push({ name: label, ok: g.length > 0, detail: g.length + " games, e.g. " + g.slice(0, 3).map((x) => x.name).join(", ") }); } catch (e) { kids.push({ name: label, ok: false, detail: String(e.message || e) }); } }
+    return { detail: kids.filter((k) => k.ok).length + " of " + SRCS.length + " lists loaded", kids };
+  });
+  def("Games", "Game files (the server fetches real games from each library)", {}, async () => {
+    const kids = [];
+    for (const [k, label] of SRCS) {
+      let list; try { list = await games(k); } catch (e) { kids.push({ name: label, ok: false, detail: "no list to test: " + (e.message || e) }); continue; }
+      for (const g of picks(list.filter((x) => x.play))) {
+        try {
+          const r = await sniff(g.play, {}, 2e6);
+          const rewrittenLeft = (r.head.match(/cdn\.jsdelivr\.net\/gh\/gn-math|raw\.githubusercontent\.com\/gn-math|cdn\.jsdelivr\.net\/gl\/x8r/g) || []).length;
+          const title = (r.head.match(/<title[^>]*>([^<]{0,80})/i) || [])[1] || "";
+          kids.push({ name: label + ": " + g.name, ok: r.ok && r.got > 0, detail: r.ok ? "HTTP " + r.status + ", " + (r.type || "no type") + ", " + (r.len ? bytes(+r.len) : "size unknown") + (title ? ", title \"" + title.trim() + "\"" : "") + (rewrittenLeft ? ", " + rewrittenLeft + " CDN address(es) left in the first part" : "") : "HTTP " + r.status + " " + r.head.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 260) });
+        } catch (e) { kids.push({ name: label + ": " + g.name, ok: false, detail: String(e.message || e) }); }
+      }
+    }
+    return { detail: kids.filter((k) => k.ok).length + " of " + kids.length + " game files loaded", kids };
+  });
+  def("Games", "Game pages actually show something (loads each in a hidden frame for 10 seconds)", { slow: true }, async () => {
+    const kids = [];
+    for (const [k, label] of SRCS) {
+      let list; try { list = await games(k); } catch (e) { kids.push({ name: label, ok: false, detail: "no list to test" }); continue; }
+      for (const g of picks(list.filter((x) => x.play))) {
+        const f = document.createElement("iframe"), reports = [];
+        f.style.cssText = "position:fixed;left:0;top:0;width:640px;height:480px;opacity:0;pointer-events:none;border:0"; f.allow = "autoplay";
+        const onMsg = (e) => { if (e.source === f.contentWindow && typeof e.data?.nvGame === "string") reports.push(e.data.nvGame); };
+        addEventListener("message", onMsg); document.body.appendChild(f); f.src = url(g.play);
+        await sleep(10000);
+        let state = "", ok = false;
+        try {
+          const d = f.contentDocument, text = (d.body && d.body.innerText || "").trim(), rich = d.querySelector("canvas, iframe, video, img, svg");
+          ok = !!(text || rich); state = !d.body || !d.body.children.length ? "the page is empty" : ok ? "the page shows content" + (d.title ? " (title: " + d.title.slice(0, 50) + ")" : "") : "the page is BLANK";
+        } catch (e) { state = "could not inspect the frame (" + e.message + ")"; }
+        removeEventListener("message", onMsg); f.remove();
+        kids.push({ name: label + ": " + g.name, ok, detail: state + (reports.length ? ". the page reported: " + reports.slice(0, 5).join(" | ") : ok ? "" : ". the page reported no errors, so it may still have been loading") });
+      }
+    }
+    return { detail: kids.filter((k) => k.ok).length + " of " + kids.length + " pages showed content", kids };
+  });
+
+  // --- AI
+  def("AI", "Nex.AI status", {}, async () => {
+    const d = await getJSON("/api/ai/status");
+    return { state: d.error ? "fail" : "info", detail: (d.ready ? "model loaded" : d.loading ? "loading " + (d.progress || "") : "not loaded yet") + ", model " + d.model + (d.memoryMB ? ", " + d.memoryMB + " MB in use" : "") + (d.error ? "\nlast error: " + d.error : "") };
+  });
+  def("AI", "Nex.AI answers a question (first run downloads the model, which can take minutes)", { slow: true }, async () => {
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 240000);
+    try {
+      const r = await fetch(url("/api/ai/chat"), { method: "POST", headers: { "content-type": "application/json" }, signal: ctl.signal, body: JSON.stringify({ model: "local", web: false, messages: [{ role: "system", content: "You are a test. Answer in one short sentence." }, { role: "user", content: "Say the word ready." }] }) });
+      if (!r.ok) { const t = await r.text(); throw new Error("HTTP " + r.status + " " + t.slice(0, 300) + (r.status >= 502 ? " (the server did not answer. it may have run out of memory)" : "")); }
+      const rd = r.body.getReader(), dec = new TextDecoder(); let buf = "", text = "", lastStatus = "";
+      for (;;) {
+        const { value, done } = await rd.read(); if (done) break;
+        buf += dec.decode(value, { stream: true }); const lines = buf.split("\n"); buf = lines.pop();
+        for (const l of lines) { if (!l.startsWith("data:") || l.includes("[DONE]")) continue; try { const j = JSON.parse(l.slice(5)); if (j.status) lastStatus = j.status; const c = j.choices?.[0]?.delta?.content; if (c) text += c; } catch {} }
+      }
+      if (!text.trim()) throw new Error("the AI sent no answer" + (lastStatus ? " (last status: " + lastStatus + ")" : ""));
+      if (text.trim().startsWith("\u26A0")) throw new Error(text.trim());
+      return "answered: " + text.trim().slice(0, 160);
+    } catch (e) { throw new Error(e.name === "AbortError" ? "no answer within 4 minutes" : e.message); }
+    finally { clearTimeout(timer); }
+  });
+
+  /* ---------- running and showing ---------- */
+  root.innerHTML = '<div class="dgbar"><button class="btn primary" id="dg-run-quick">Run quick tests</button><button class="btn" id="dg-run-all">Run everything (slow)</button><button class="btn" id="dg-copy">Copy report</button><span id="dg-summary"></span></div><div id="dg-list"></div>';
+  let busy = false;
+  async function run(t) {
+    t.state = "run"; t.detail = ""; t.kids = []; render();
+    const s = performance.now();
+    try {
+      const r = await t.fn(t);
+      if (typeof r === "string") { t.detail = r; t.state = "pass"; }
+      else { t.detail = r.detail || ""; t.kids = r.kids || []; t.state = r.state || (t.kids.some((k) => k.ok === false) ? "fail" : "pass"); }
+    } catch (e) { t.state = "fail"; t.detail = String(e && e.message || e); }
+    t.ms = Math.round(performance.now() - s); render();
+  }
+  async function runMany(list) {
+    if (busy) return; busy = true; setButtons(true);
+    for (const k in memo) delete memo[k]; // fresh data each time
+    for (const t of list) await run(t);
+    busy = false; setButtons(false); render(); // re-enable the per-test Run buttons
+  }
+  const setButtons = (b) => { for (const id of ["dg-run-quick", "dg-run-all"]) $("#" + id).disabled = b; };
+  const TAG = { idle: "NOT RUN", run: "RUNNING", pass: "PASS", fail: "FAIL", info: "INFO" };
+
+  function render() {
+    let html = "", last = "";
+    for (const t of tests) {
+      if (t.group !== last) { last = t.group; html += '<div class="dgh">' + esc(t.group) + "</div>"; }
+      html += '<div class="dgt ' + t.state + '"><div class="dgrow"><span class="dgname">' + esc(t.name) + "</span>" + (t.slow ? '<span class="dgslow">slow</span>' : "") +
+        (t.ms ? '<span class="dgms">' + t.ms + " ms</span>" : "") + '<span class="dgtag">' + TAG[t.state] + '</span><button class="btn" data-run="' + t.id + '"' + (busy ? " disabled" : "") + ">Run</button></div>" +
+        (t.detail ? '<div class="dgdetail">' + esc(t.detail) + "</div>" : "") +
+        (t.kids.length ? '<ul class="dgkids">' + t.kids.map((k) => '<li class="' + (k.ok === true ? "g" : k.ok === false ? "b" : "") + '"><b>' + esc(k.name) + '</b> <span class="dgwhy">' + (k.ok === true ? "ok. " : k.ok === false ? "FAILED. " : "") + esc(k.detail || "") + "</span></li>").join("") + "</ul>" : "") + "</div>";
+    }
+    $("#dg-list").innerHTML = html;
+    const c = (s) => tests.filter((t) => t.state === s).length;
+    $("#dg-summary").textContent = c("pass") + " passed, " + c("fail") + " failed" + (c("run") ? ", running" : "");
+  }
+
+  function report() {
+    const out = ["Nex.Velo diagnostics", "time: " + new Date().toString(), "page: " + location.href, "browser: " + navigator.userAgent, ""];
+    for (const t of tests) {
+      out.push("[" + TAG[t.state] + "] " + t.group + " / " + t.name + (t.ms ? " (" + t.ms + " ms)" : ""));
+      if (t.detail) out.push("    " + t.detail.replace(/\n/g, "\n    "));
+      for (const k of t.kids) out.push("    - " + (k.ok === true ? "ok " : k.ok === false ? "FAILED " : "") + k.name + ": " + (k.detail || ""));
+    }
+    return out.join("\n");
+  }
+
+  $("#dg-list").addEventListener("click", (e) => { const b = e.target.closest("[data-run]"); if (!b || busy) return; const t = tests.find((x) => x.id === b.dataset.run); busy = true; setButtons(true); run(t).finally(() => { busy = false; setButtons(false); render(); }); });
+  $("#dg-run-quick").addEventListener("click", () => runMany(tests.filter((t) => !t.slow)));
+  $("#dg-run-all").addEventListener("click", () => runMany(tests));
+  $("#dg-copy").addEventListener("click", async () => {
+    const text = report(), b = $("#dg-copy");
+    try { await navigator.clipboard.writeText(text); b.textContent = "Copied"; }
+    catch { const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); b.textContent = "Copied"; } catch { b.textContent = "Copy failed"; } ta.remove(); }
+    setTimeout(() => { b.textContent = "Copy report"; }, 1800);
+  });
+  render();
+};
+</script>
+<script>
 /* Loader: asks the host for the newest version number first, then loads every script with that number
 in its address, so a CDN or browser can never hand out an old copy of a file. */
 (function () {
@@ -649,9 +923,9 @@ s.src = /^\/(baremux|scram)\//.test(f) ? f : f + "?v=" + encodeURIComponent(v);
 s.onload = s.onerror = function () { load(i + 1, v); };
 document.body.appendChild(s);
 }
-fetch("/version.json?t=" + Date.now(), { cache: "no-store" })
-.then(function (r) { return r.json(); })
-.then(function (d) { return d.version || mine || "0"; })
+function ask(file) { return fetch(file + "?t=" + Date.now(), { cache: "no-store" }).then(function (r) { if (!r.ok) throw 0; return r.text(); }).then(function (t) { return JSON.parse(t).version; }); }
+ask("/version.json").catch(function () { return ask("/version.js"); })
+.then(function (v) { return v || mine || "0"; })
 .catch(function () { return mine || "0"; })
 .then(function (v) {
 if (mine && v !== mine && sessionStorage.getItem("nv-reloaded") !== v) { // this page is older than the files, fetch a fresh copy
