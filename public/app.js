@@ -373,7 +373,7 @@ if (ex) { select(ex); if (kind === "settings") loadSettingsUI(); } else newTab({
 
 /* ----- addresses like Nex.Velo/Music/Playlists: shown in the address bar, and typed to jump straight there ----- */
 const KIND_LABEL = { music: "Music", games: "Games", ai: "AI", settings: "Settings" };
-const titleSlug = (s) => s.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join("-");
+const titleSlug = (s) => (s === "ugs" ? "UGS" : s.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join("-"));
 function currentSub(kind) {
 if (kind === "music") return $("#page-music .mtabs .on")?.dataset.mt || "";
 if (kind === "games") { const k = $("#gtabs .on")?.dataset.g || ""; return k === "gn" ? "gn-math" : k; }
@@ -387,7 +387,7 @@ sub = sub.toLowerCase();
 if (app === "music" && ["search", "playlists", "recent"].includes(sub)) NV.musicShowTab && NV.musicShowTab(sub);
 else if (app === "games") {
 const k = sub === "gn-math" || sub === "gnmath" ? "gn" : sub;
-if (["cherri", "gn", "duckmath", "weslack"].includes(k)) NV.gamesShowSource && NV.gamesShowSource(k, true);
+if (["cherri", "gn", "obsidian", "ugs", "duckmath", "weslack"].includes(k)) NV.gamesShowSource && NV.gamesShowSource(k, true);
 } else if (app === "settings") {
 const id = sub === "apps" ? "extensions" : sub;
 if ($("#sec-" + id)) showSec(id);
@@ -621,9 +621,9 @@ function showSec(id) {
 $$(".nb").forEach((b) => b.classList.toggle("on", b.dataset.sec === id));
 $$(".sec").forEach((s) => s.classList.toggle("on", s.id === "sec-" + id));
 $(".spane").scrollTop = 0;
-if (id === "diagnostics") { // the Diagnostics tool is loaded the first time this section is opened
-const f = $("#diag-frame");
-if (f && !f.getAttribute("src")) apiReady.then(() => { f.src = "/diagnostics.html?embed=1" + (API ? "&api=" + encodeURIComponent(API) : "") + "&v=" + VERSION; });
+if (id === "diagnostics") { // the Diagnostics tool is drawn the first time this section is opened
+const box = $("#diag-root");
+if (box && !box.dataset.ready && window.__nvDiagMount) apiReady.then(() => { if (!box.dataset.ready) { box.dataset.ready = "1"; window.__nvDiagMount(box); } });
 }
 syncChrome();
 }
@@ -826,8 +826,11 @@ if (e.target.closest("[data-later]")) { clearInterval(tick); bar.hidden = true; 
 }
 async function checkUpdate() {
 try {
-const r = await _fetch("/version.json?t=" + Date.now(), { cache: "no-store" });
-if (r.ok) { const v = (await r.json()).version; if (v && v !== VERSION) offerUpdate(v); }
+for (const file of ["/version.json", "/version.js"]) {
+const r = await _fetch(file + "?t=" + Date.now(), { cache: "no-store" });
+if (!r.ok) continue;
+const v = JSON.parse(await r.text()).version; if (v && v !== VERSION) offerUpdate(v); break;
+}
 } catch {}
 try { const reg = await navigator.serviceWorker?.getRegistration(); reg && reg.update(); } catch {}
 }
