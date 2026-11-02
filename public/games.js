@@ -5,12 +5,12 @@
   const { LS, proxyFrame, toast, esc, apiBase } = window.NV;
   const $ = (s, r = document) => r.querySelector(s);
   const PAGE = 60;
-  const SOURCES = ["cherri", "gn", "obsidian", "duckmath", "weslack"];
+  const SOURCES = ["cherri", "gn", "obsidian", "ugs", "duckmath", "weslack"];
   // These two are opened as whole websites through the proxy (no game list to read)
   // If a library's files won't load, its own website can still be opened through the proxy. (Change these addresses here if a site moves.)
   const SITES = { gn: { label: "GN Math website", url: "https://gn-math.github.io/" }, cherri: { label: "Cherri website", url: "https://cherrion.top/" } };
   const PROXIED = { duckmath: "https://duckmath.org/", weslack: "https://weslack.com/" };
-  const LABEL = { cherri: "Cherri", gn: "GN Math", obsidian: "Obsidian", duckmath: "DuckMath", weslack: "Weslack" };
+  const LABEL = { cherri: "Cherri", gn: "GN Math", obsidian: "Obsidian", ugs: "UGS", duckmath: "DuckMath", weslack: "Weslack" };
 
   let src = (() => { try { return JSON.parse(LS.get("nexvelo.games", "{}")).src; } catch { return null; } })();
   if (!SOURCES.includes(src)) src = "cherri";
