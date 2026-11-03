@@ -1,248 +1,153 @@
-// Movies and TV for Nex.Velo. Only free, legal sources are used:
-//   - Internet Archive (archive.org): public-domain films and classic TV that can be played right here. No key needed.
-//   - TMDB (themoviedb.org): posters, details, seasons and episodes, trailers and "where to watch" links for almost every title.
-//     It needs a free key: set TMDB_API_KEY (or TMDB_TOKEN) on the server. Without it, only the Internet Archive is used.
-// TMDB does not stream anything. For titles that are not free here it points to the services that do carry them.
+/* Movies and TV: browse or search, pick a season and an episode, and play free titles right here.
+   Free and legal sources only. The Internet Archive plays public-domain films and classic TV. TMDB (when the server has a key)
+   adds pictures, seasons, trailers and where-to-watch links for almost everything else. */
+(() => {
+  "use strict";
+  const { esc, openUrl } = window.NV;
+  const $ = (s, r = document) => r.querySelector(s);
+  const region = ((navigator.language || "en-US").split("-")[1] || "US").toUpperCase();
 
-import { Readable } from "node:stream";
+  let kind = "all", items = [], cur = null, season = null, episode = null, searchToken = 0, playToken = 0, embedUrl = "", timer = 0;
 
-export function registerMovies(app, { withTimeout, UA, cached }) {
-  const key = () => String(process.env.TMDB_API_KEY || process.env.TMDB_TOKEN || "").trim();
-
-  // How well each source has been working lately. When the same title comes from two sources, the more reliable one is used.
-  const health = { archive: { ok: 0, fail: 0 }, tmdb: { ok: 0, fail: 0 } };
-  const note = (src, ok) => { health[src][ok ? "ok" : "fail"]++; };
-  const reliability = (src) => (health[src].ok + 2) / (health[src].ok + health[src].fail + 3);
-
-  const norm = (t) => String(t || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").replace(/^(the|a|an) /, "").trim();
-  const one = (v) => (Array.isArray(v) ? v[0] : v);
-  const clean = (t) => String(one(t) || "").replace(/<[^>]+>/g, " ").replace(/&[a-z]+;/g, " ").replace(/\s+/g, " ").trim();
-
-  /* ================= Internet Archive ================= */
-  const AR = "https://archive.org";
-  async function arJson(url, ms = 15000) {
-    const r = await withTimeout(fetch(url, { headers: { "user-agent": UA, accept: "application/json" }, redirect: "follow" }), ms);
-    if (!r.ok) throw new Error("archive.org answered " + r.status);
-    return r.json();
-  }
-
-  async function archiveSearch(q, type) {
-    const kind = type === "tv" ? "collection:classic_tv" : type === "movie" ? "collection:feature_films" : "(collection:feature_films OR collection:classic_tv)";
-    const words = String(q || "").replace(/[^\w\s'-]/g, " ").replace(/\s+/g, " ").trim();
-    const p = new URLSearchParams({ q: `mediatype:movies AND ${kind}` + (words ? ` AND title:(${words})` : ""), rows: "30", page: "1", output: "json" });
-    for (const f of ["identifier", "title", "year", "description", "collection"]) p.append("fl[]", f);
-    p.append("sort[]", "downloads desc");
-    const d = await arJson(`${AR}/advancedsearch.php?${p}`);
-    return (d?.response?.docs || []).filter((x) => x.identifier && x.title).map((x) => ({
-      source: "archive", id: "archive:" + x.identifier,
-      type: [].concat(x.collection || []).includes("classic_tv") ? "tv" : "movie",
-      title: clean(x.title).slice(0, 120), year: x.year ? String(one(x.year)).slice(0, 4) : "",
-      poster: `${AR}/services/img/${encodeURIComponent(x.identifier)}`, overview: clean(x.description).slice(0, 400), playable: true,
-    }));
-  }
-
-  const archiveMeta = (id) => cached("ar:meta:" + id, () => arJson(`${AR}/metadata/${encodeURIComponent(id)}`), 30 * 60 * 1000);
-
-  // The playable video files of an item, one version of each.
-  function archiveVideos(meta) {
-    const files = (meta?.files || []).filter((f) => /\.(mp4|m4v|mkv|avi|ogv|mpeg|mpg|webm)$/i.test(f.name) && !/(^|[_.-])(thumb|sample|trailer)/i.test(f.name));
-    const best = new Map();
-    for (const f of files) {
-      const base = f.name.replace(/\.[^.]+$/, "").replace(/\.(ia|512kb|h264|mpeg4)$/i, "");
-      const score = /\.mp4$/i.test(f.name) || /h\.264|mpeg4/i.test(f.format || "") ? 2 : 1;
-      const prev = best.get(base);
-      if (!prev || score > prev.score) best.set(base, { f, score });
-    }
-    return [...best.values()].map((x) => x.f).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-  }
-
-  // Episodes of an item. Names like S01E02 or 1x02 give real season and episode numbers, otherwise they are numbered in order.
-  function archiveEpisodes(meta) {
-    const out = []; let seq = 0;
-    for (const f of archiveVideos(meta)) {
-      const m = f.name.match(/s(\d{1,2})[ ._-]?e(\d{1,3})/i) || f.name.match(/(?:^|\D)(\d{1,2})x(\d{1,3})(?:\D|$)/i);
-      out.push({ season: m ? +m[1] : 1, number: m ? +m[2] : ++seq, name: f.name.replace(/\.[^.]+$/, "").replace(/[_.]+/g, " ").trim(), file: f.name });
-    }
-    return out;
-  }
-
-  async function archivePlay(identifier, season, episode) {
-    const meta = await archiveMeta(identifier);
-    if (!meta || !meta.files) throw new Error("archive.org has no files for this item");
-    if (meta.is_dark || String(meta.metadata?.["access-restricted-item"]) === "true") throw new Error("this item is restricted on archive.org");
-    const eps = archiveEpisodes(meta);
-    if (!eps.length) throw new Error("no playable video in this item");
-    let url = `${AR}/embed/${encodeURIComponent(identifier)}`;
-    if (season != null && episode != null && eps.length > 1) {
-      const hit = eps.find((e) => e.season === +season && e.number === +episode);
-      if (hit) url += "/" + encodeURIComponent(hit.file);
-    }
-    return { kind: "embed", url, source: "archive", title: clean(meta.metadata?.title) };
-  }
-
-  /* ================= TMDB ================= */
-  const IMG = "https://image.tmdb.org/t/p/w342";
-  async function tmdb(path, params = {}) {
-    const k = key(); if (!k) throw new Error("no TMDB_API_KEY is set on the server");
-    const u = new URL("https://api.themoviedb.org/3" + path);
-    for (const [a, b] of Object.entries(params)) u.searchParams.set(a, b);
-    const headers = { "user-agent": UA, accept: "application/json" };
-    if (k.length > 40) headers.authorization = "Bearer " + k; else u.searchParams.set("api_key", k);
-    const r = await withTimeout(fetch(u, { headers }), 15000);
-    if (!r.ok) throw new Error("TMDB answered " + r.status + (r.status === 401 ? " (the key was refused)" : ""));
-    return r.json();
-  }
-  const fromTmdb = (x, forced) => {
-    const type = x.media_type || forced;
-    if (type !== "movie" && type !== "tv") return null;
-    return {
-      source: "tmdb", id: `tmdb:${type}:${x.id}`, type, title: clean(x.title || x.name), year: String(x.release_date || x.first_air_date || "").slice(0, 4),
-      poster: x.poster_path ? IMG + x.poster_path : "", overview: clean(x.overview).slice(0, 400), playable: false,
-    };
+  const get = async (path) => {
+    const r = await fetch(path); let d = {}; try { d = await r.json(); } catch {}
+    if (!r.ok) { const e = new Error(d.error || "the server answered " + r.status); e.data = d; throw e; }
+    return d;
   };
-  async function tmdbSearch(q, type) {
-    const d = q
-      ? await tmdb(type === "movie" ? "/search/movie" : type === "tv" ? "/search/tv" : "/search/multi", { query: q, include_adult: "false" })
-      : await tmdb(type === "movie" ? "/trending/movie/week" : type === "tv" ? "/trending/tv/week" : "/trending/all/week");
-    return (d.results || []).map((x) => fromTmdb(x, type === "all" ? "" : type)).filter(Boolean).slice(0, 30);
-  }
-  const providers = (wp, region) => {
-    const r = wp?.results?.[region] || wp?.results?.US || null; if (!r) return null;
-    const names = (l) => (l || []).map((x) => x.provider_name);
-    return { region: wp?.results?.[region] ? region : "US", link: r.link || "", flatrate: names(r.flatrate), rent: names(r.rent), buy: names(r.buy) };
-  };
+  const pic = (u) => (u ? window.NV.api("/api/movies/img?u=" + encodeURIComponent(u)) : ""); // pictures come through the server
+  const label = (it) => [it.year, it.type === "tv" ? "tv show" : "movie"].filter(Boolean).join(" · ");
 
-  /* ================= merging results ================= */
-  const score = (it) => reliability(it.source) + (it.playable ? 0.5 : 0);
-  async function search(q, type, region) {
-    const jobs = [["archive", () => archiveSearch(q, type)]];
-    if (key()) jobs.push(["tmdb", () => tmdbSearch(q, type)]);
-    const res = await Promise.allSettled(jobs.map(([, f]) => f()));
-    const errors = {}, all = [];
-    res.forEach((r, i) => {
-      const name = jobs[i][0];
-      if (r.status === "fulfilled") { note(name, true); all.push(...r.value); }
-      else { note(name, false); errors[name] = String(r.reason?.message || r.reason); }
-    });
-    // The same title from more than one source becomes one card. The most reliable source is used, the others stay as backups,
-    // and the picture can come from any of them.
-    const buckets = new Map();
-    for (const it of all) {
-      const k = norm(it.title); if (!k) continue;
-      const list = buckets.get(k) || buckets.set(k, []).get(k);
-      const group = list.find((g) => !g[0].year || !it.year || g[0].year === it.year);
-      group ? group.push(it) : list.push([it]);
+  function say(el, text, diag) { // a message, with an optional button that opens Settings > Diagnostics
+    el.textContent = text || "";
+    if (!text || !diag) return;
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "btn"; b.textContent = "open diagnostics"; b.style.marginLeft = ".5rem";
+    b.addEventListener("click", () => window.NV.openSettings("diagnostics")); el.appendChild(b);
+  }
+  const msg = (t, d) => say($("#mvmsg"), t, d), playMsg = (t, d) => say($("#mv-msg"), t, d);
+
+  /* ---------- the list ---------- */
+  function renderGrid() {
+    $("#mvgrid").innerHTML = items.map((it, i) => {
+      const hue = [...it.title].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 11);
+      return `<button class="pcard" data-i="${i}"><i class="pimg" style="--h:${hue}"><b>${esc((it.title.trim()[0] || "?").toUpperCase())}</b>${it.poster ? `<img src="${esc(pic(it.poster))}" alt="" loading="lazy" onerror="this.remove()">` : ""}</i><span>${esc(it.title)}</span><small>${esc(label(it))}${it.playable ? " · free to watch" : ""}</small></button>`;
+    }).join("");
+  }
+
+  async function search() {
+    const q = $("#mvq").value.trim(), my = ++searchToken;
+    msg(q ? "searching…" : "loading titles…");
+    try {
+      const d = await get(`/api/movies/search?q=${encodeURIComponent(q)}&type=${kind}&region=${region}`);
+      if (my !== searchToken) return;
+      items = d.items || []; renderGrid();
+      $("#mvcount").textContent = items.length + " title" + (items.length === 1 ? "" : "s");
+      $("#mvnote").textContent = d.tmdb ? "" : "only free public-domain titles are listed. to also see pictures, trailers and where-to-watch links for almost every title, the server owner can add a free TMDB_API_KEY.";
+      const problems = Object.entries(d.errors || {}).map(([k, v]) => k + ": " + v).join("; ");
+      if (!items.length) msg((q ? "nothing found for that. try another title." : "no titles available right now.") + (problems ? " (" + problems + ")" : ""), !!problems);
+      else msg(problems ? "some sources didn't answer (" + problems + "), so this list may be shorter." : "", !!problems);
+    } catch (e) {
+      if (my !== searchToken) return;
+      items = []; renderGrid(); $("#mvcount").textContent = ""; msg("couldn't load movies: " + e.message, true);
     }
-    const items = [];
-    for (const list of buckets.values()) for (const group of list) {
-      group.sort((a, b) => score(b) - score(a));
-      const [win, ...rest] = group;
-      items.push({ ...win, poster: win.poster || rest.find((r) => r.poster)?.poster || "", alts: rest.map((r) => ({ id: r.id, source: r.source })), sources: group.map((g) => g.source) });
-    }
-    return { items, errors, tmdb: !!key() };
   }
 
-  /* ================= details, episodes, playing ================= */
-  async function details(id, region) {
-    if (id.startsWith("archive:")) {
-      const ident = id.slice(8), meta = await archiveMeta(ident);
-      const eps = archiveEpisodes(meta), m = meta.metadata || {};
-      const tv = [].concat(m.collection || []).includes("classic_tv");
-      const counts = new Map(); for (const e of eps) counts.set(e.season, (counts.get(e.season) || 0) + 1);
-      return {
-        id, source: "archive", type: tv ? "tv" : "movie", title: clean(m.title), year: String(one(m.year) || "").slice(0, 4), overview: clean(m.description).slice(0, 1200),
-        poster: `${AR}/services/img/${encodeURIComponent(ident)}`, seasons: tv && eps.length > 1 ? [...counts].map(([number, count]) => ({ number, name: "Season " + number, count })) : [],
-      };
-    }
-    const [, kind, n] = id.split(":");
-    if (!["movie", "tv"].includes(kind) || !/^\d+$/.test(n || "")) throw new Error("bad title id");
-    const d = await tmdb(`/${kind}/${n}`, { append_to_response: "videos,watch/providers" });
-    const vids = (d.videos?.results || []).filter((v) => v.site === "YouTube");
-    const trailer = (vids.find((v) => v.type === "Trailer") || vids[0] || {}).key || "";
-    return {
-      id, source: "tmdb", type: kind, title: clean(d.title || d.name), year: String(d.release_date || d.first_air_date || "").slice(0, 4), overview: clean(d.overview).slice(0, 1200),
-      poster: d.poster_path ? IMG + d.poster_path : "", trailer, providers: providers(d["watch/providers"], region),
-      seasons: kind === "tv" ? (d.seasons || []).filter((s) => s.episode_count > 0).map((s) => ({ number: s.season_number, name: clean(s.name), count: s.episode_count })) : [],
-    };
+  /* ---------- one title ---------- */
+  const stopPlayer = () => { $("#mv-player").innerHTML = ""; embedUrl = ""; };
+
+  async function showEmbed(url) {
+    const holder = $("#mv-player"); holder.innerHTML = ""; embedUrl = url;
+    let el; try { el = await window.NV.proxyFrame(url); } catch { el = document.createElement("iframe"); el.src = url; } // through the proxy first, so it works where the site is blocked
+    el.allow = "fullscreen; autoplay; encrypted-media"; el.setAttribute("allowfullscreen", "");
+    holder.appendChild(el);
   }
 
-  async function episodes(id, season) {
-    if (id.startsWith("archive:")) return archiveEpisodes(await archiveMeta(id.slice(8))).filter((e) => e.season === +season).map(({ number, name }) => ({ number, name }));
-    const [, kind, n] = id.split(":");
-    if (kind !== "tv" || !/^\d+$/.test(n || "")) return [];
-    const d = await tmdb(`/tv/${n}/season/${+season}`);
-    return (d.episodes || []).map((e) => ({ number: e.episode_number, name: clean(e.name), overview: clean(e.overview).slice(0, 300) }));
+  function showWhere(p) {
+    const box = $("#mv-where");
+    if (!p || !(p.flatrate.length || p.rent.length || p.buy.length)) { box.innerHTML = ""; return; }
+    const row = (name, list) => (list.length ? `<div class="mvw"><small>${name}</small><div class="chips">${list.map((x) => `<span class="chip">${esc(x)}</span>`).join("")}</div></div>` : "");
+    box.innerHTML = `<div class="dgh">where to watch (${esc(p.region)})</div>${row("stream", p.flatrate)}${row("rent", p.rent)}${row("buy", p.buy)}${p.link ? '<button class="btn" id="mv-all">see all options</button>' : ""}`;
+    const all = $("#mv-all"); if (all) all.addEventListener("click", () => openUrl(p.link));
   }
+  function showTrailer(key) { const b = $("#mv-trailer"); b.hidden = !key; b.dataset.key = key || ""; }
 
-  // Try the title's best source, then each backup, until one can play it. A source that only has information (no free stream)
-  // is remembered, so that if nothing can play, the trailer and "where to watch" are still shown.
-  async function play(id, alts, season, episode, region) {
-    const tried = []; let info = null;
-    for (const cid of [id, ...alts]) {
-      const src = cid.startsWith("archive:") ? "archive" : cid.startsWith("tmdb:") ? "tmdb" : "";
-      if (!src) continue;
+  async function loadEpisodes() {
+    const sel = $("#mv-episode"); sel.innerHTML = ""; episode = null;
+    if (season == null) return;
+    for (const id of [cur.id, ...(cur.alts || []).map((a) => a.id)]) { // this title's own source first, then its backups
       try {
-        if (src === "archive") { const r = await archivePlay(cid.slice(8), season, episode); note("archive", true); return { ...r, tried }; }
-        if (!info) { const d = await details(cid, region); note("tmdb", true); info = { kind: "info", title: d.title, trailer: d.trailer, providers: d.providers }; }
-        tried.push("tmdb: no free stream, only information");
-      } catch (e) { note(src, false); tried.push(src + ": " + String(e?.message || e).slice(0, 120)); }
+        const d = await get(`/api/movies/episodes?id=${encodeURIComponent(id)}&season=${season}`);
+        if (!(d.episodes || []).length) continue;
+        sel.innerHTML = d.episodes.map((e) => `<option value="${e.number}">${esc(e.number + ". " + (e.name || "episode " + e.number))}</option>`).join("");
+        episode = +sel.value; return;
+      } catch {}
     }
-    if (info) return { ...info, tried };
-    const err = new Error("none of the sources could play this"); err.tried = tried; throw err;
+    sel.innerHTML = '<option value="">no episodes listed</option>';
   }
 
-  /* ================= checks for Diagnostics ================= */
-  async function healthCheck() {
-    const out = [];
-    try {
-      const items = await archiveSearch("night of the living dead", "movie");
-      if (!items.length) throw new Error("the search returned nothing");
-      try { await archivePlay(items[0].id.slice(8)); } catch (e) { throw new Error("search works, but playing fails: " + (e.message || e)); }
-      note("archive", true); out.push({ name: "Internet Archive (free movies and classic TV)", ok: true, detail: items.length + " results and \"" + items[0].title + "\" can be played" });
-    } catch (e) { note("archive", false); out.push({ name: "Internet Archive (free movies and classic TV)", ok: false, detail: String(e?.message || e) }); }
-    if (!key()) out.push({ name: "TMDB (posters, seasons, trailers, where to watch)", ok: null, detail: "not set up. add a free TMDB_API_KEY variable on the server to turn it on" });
-    else {
-      try { const items = await tmdbSearch("inception", "movie"); if (!items.length) throw new Error("the search returned nothing"); note("tmdb", true); out.push({ name: "TMDB (posters, seasons, trailers, where to watch)", ok: true, detail: items.length + " results" }); }
-      catch (e) { note("tmdb", false); out.push({ name: "TMDB (posters, seasons, trailers, where to watch)", ok: false, detail: String(e?.message || e) }); }
+  async function openTitle(it) {
+    cur = it; season = episode = null; ++playToken; stopPlayer();
+    $("#mv-browse").hidden = true; $("#mv-view").hidden = false;
+    $("#mv-title").textContent = it.title; $("#mv-meta").textContent = label(it); $("#mv-overview").textContent = it.overview || "";
+    $("#mv-poster").src = pic(it.poster); $("#mv-poster").style.visibility = it.poster ? "visible" : "hidden";
+    $("#mv-sel").hidden = true; showTrailer(""); $("#mv-where").innerHTML = ""; playMsg("loading details…");
+    let d = null; const why = [];
+    for (const id of [it.id, ...(it.alts || []).map((a) => a.id)]) { // this title's own source first, then its backups
+      try { d = await get(`/api/movies/title?id=${encodeURIComponent(id)}&region=${region}`); break; } catch (e) { why.push(e.message); }
     }
-    return { sources: out, anyOk: out.some((s) => s.ok === true) };
+    if (cur !== it) return;
+    if (!d) { playMsg("couldn't load the details (" + why.join("; ") + "). you can still try play."); return; }
+    $("#mv-overview").textContent = d.overview || it.overview || "";
+    if (d.poster && !it.poster) { $("#mv-poster").src = pic(d.poster); $("#mv-poster").style.visibility = "visible"; }
+    // a free title from the Internet Archive still gets its trailer and where-to-watch from TMDB when the server has it
+    const info = d.source === "tmdb" ? d : null;
+    let extra = info;
+    if (!extra) { const alt = (it.alts || []).find((a) => a.source === "tmdb"); if (alt) { try { extra = await get(`/api/movies/title?id=${encodeURIComponent(alt.id)}&region=${region}`); } catch {} } }
+    if (cur !== it) return;
+    if (extra) { showTrailer(extra.trailer); showWhere(extra.providers); if (!d.overview) $("#mv-overview").textContent = extra.overview || ""; }
+    // seasons and episodes for tv shows
+    const seasons = (d.seasons && d.seasons.length ? d.seasons : extra && extra.seasons) || [];
+    if (it.type === "tv" && seasons.length) {
+      $("#mv-season").innerHTML = seasons.map((s) => `<option value="${s.number}">${esc(s.name || "Season " + s.number)} (${s.count} episode${s.count === 1 ? "" : "s"})</option>`).join("");
+      season = +$("#mv-season").value; $("#mv-sel").hidden = false; await loadEpisodes();
+    }
+    if (cur === it) playMsg(it.playable ? "press play to watch." : "press play to look for a source.");
   }
 
-  /* ================= routes ================= */
-  const fail = (reply, e, code = 502) => { reply.code(code); return { error: String(e?.message || e), ...(e?.tried ? { tried: e.tried } : {}) }; };
-  const region = (q) => (/^[A-Za-z]{2}$/.test(String(q || "")) ? String(q).toUpperCase() : "US");
-
-  app.get("/api/movies/search", async (req, reply) => {
-    const q = String(req.query?.q || "").trim().slice(0, 100), type = ["movie", "tv"].includes(req.query?.type) ? req.query.type : "all";
-    try { return await cached("mv:search:" + type + ":" + norm(q), () => search(q, type, region(req.query?.region)), 5 * 60 * 1000); }
-    catch (e) { return fail(reply, e); }
-  });
-  app.get("/api/movies/title", async (req, reply) => {
-    try { return await details(String(req.query?.id || ""), region(req.query?.region)); } catch (e) { return fail(reply, e); }
-  });
-  app.get("/api/movies/episodes", async (req, reply) => {
-    try { return { episodes: await episodes(String(req.query?.id || ""), req.query?.season) }; } catch (e) { return fail(reply, e); }
-  });
-  app.get("/api/movies/play", async (req, reply) => {
-    const alts = String(req.query?.alts || "").split(",").map((x) => x.trim()).filter(Boolean).slice(0, 4);
-    const num = (v) => (v == null || v === "" ? null : +v);
-    try { return await play(String(req.query?.id || ""), alts, num(req.query?.season), num(req.query?.episode), region(req.query?.region)); }
-    catch (e) { return fail(reply, e); }
-  });
-  app.get("/api/movies/health", async () => healthCheck());
-
-  // Pictures come through this server, so they load even where archive.org or TMDB are blocked.
-  app.get("/api/movies/img", async (req, reply) => {
-    const u = String(req.query?.u || "");
-    if (!/^https:\/\/(archive\.org\/services\/img\/|image\.tmdb\.org\/t\/p\/)/.test(u)) { reply.code(400); return "bad address"; }
+  async function play() {
+    if (!cur) return;
+    const my = ++playToken; stopPlayer(); playMsg("finding a source that works…");
+    const qs = new URLSearchParams({ id: cur.id, alts: (cur.alts || []).map((a) => a.id).join(","), region });
+    if (!$("#mv-sel").hidden && season != null) { qs.set("season", season); if (episode != null) qs.set("episode", episode); }
     try {
-      const up = await withTimeout(fetch(u, { headers: { "user-agent": UA }, redirect: "follow" }), 15000);
-      const type = up.headers.get("content-type") || "";
-      if (!up.ok || !/^image\//i.test(type)) { reply.code(404); return "no picture"; }
-      reply.header("content-type", type).header("cache-control", "public, max-age=86400");
-      return reply.send(Readable.fromWeb(up.body));
-    } catch { reply.code(502); return "couldn't load the picture"; }
-  });
+      const d = await get("/api/movies/play?" + qs);
+      if (my !== playToken) return;
+      if (d.kind === "embed") { await showEmbed(d.url); playMsg(""); return; }
+      if (d.trailer) showTrailer(d.trailer);
+      if (d.providers) showWhere(d.providers);
+      playMsg("there is no free stream of this title. " + (d.trailer ? "you can watch the trailer. " : "") + (d.providers ? "see where to watch it below." : ""));
+    } catch (e) {
+      if (my !== playToken) return;
+      playMsg("none of the sources could play this" + (e.data && e.data.tried && e.data.tried.length ? ": " + e.data.tried.join(" · ") : e.message ? ": " + e.message : "") + ".", true);
+    }
+  }
 
-  return { health: healthCheck };
-}
+  const back = () => { ++playToken; stopPlayer(); cur = null; $("#mv-view").hidden = true; $("#mv-browse").hidden = false; };
+
+  /* ---------- wiring ---------- */
+  $("#mvtabs").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-mv]"); if (!b) return;
+    kind = b.dataset.mv; document.querySelectorAll("#mvtabs button").forEach((x) => x.classList.toggle("on", x === b)); search();
+  });
+  $("#mvq").addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(search, 350); });
+  $("#mvgrid").addEventListener("click", (e) => { const c = e.target.closest(".pcard"); if (c) openTitle(items[+c.dataset.i]); });
+  $("#mv-back").addEventListener("click", back);
+  $("#mv-play").addEventListener("click", play);
+  $("#mv-trailer").addEventListener("click", (e) => { const k = e.currentTarget.dataset.key; if (k) { ++playToken; showEmbed("https://www.youtube-nocookie.com/embed/" + encodeURIComponent(k) + "?rel=0&autoplay=1"); playMsg(""); } });
+  $("#mv-open").addEventListener("click", () => { if (embedUrl) openUrl(embedUrl); });
+  $("#mv-season").addEventListener("change", async (e) => { season = +e.target.value; await loadEpisodes(); });
+  $("#mv-episode").addEventListener("change", (e) => { episode = +e.target.value || null; });
+
+  window.NV.onMoviesOpen = () => { if (!items.length) search(); };
+  window.NV.loaded.movies = true;
+})();
