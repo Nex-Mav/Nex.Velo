@@ -390,6 +390,29 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .app-tile span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #apps-menu .empty{grid-column:1/-1;padding:1rem .5rem;text-align:center;color:var(--dim);font-size:.8125rem}
 @media (prefers-reduced-motion:reduce){#apps-menu.in,#apps-menu.out{animation:none}}
+/* movies */
+.mvgrid{grid-template-columns:repeat(auto-fill,minmax(8.5rem,1fr))}
+.pcard{text-align:left;border-radius:.875rem;overflow:hidden;display:flex;flex-direction:column;background:var(--btn);min-width:0;padding:0}
+.pcard:hover{background:var(--btn-h)}
+.pimg{position:relative;display:grid;place-items:center;aspect-ratio:2/3;background:linear-gradient(160deg,hsl(var(--h) 45% 34%),hsl(calc(var(--h) + 50) 45% 20%));overflow:hidden}
+.pimg b{font-size:2.25rem;font-weight:500;color:#fff;opacity:.85}
+.pimg img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.pcard span{padding:.5rem .625rem .125rem;font-size:.75rem;line-height:1.3;min-height:2.4rem;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pcard small{padding:0 .625rem .625rem;font-size:.6875rem;color:var(--dim)}
+.mvnote{margin:1rem 0 0;font-size:.75rem;color:var(--dim);max-width:40rem}
+.mvdetail{display:grid;grid-template-columns:15rem minmax(0,1fr);gap:1.25rem;flex:1;min-height:0;overflow:auto;padding-bottom:1rem}
+.mvside{display:flex;flex-direction:column;gap:.75rem}
+.mvside img{width:100%;aspect-ratio:2/3;object-fit:cover;border-radius:.875rem;background:var(--card)}
+.mvmeta{font-size:.75rem;color:var(--dim)}
+.mvside .fld{margin-bottom:.5rem}
+.mvw{margin-bottom:.5rem}
+.mvw small{display:block;font-size:.6875rem;color:var(--dim);margin-bottom:.25rem}
+#mv-player{position:relative;aspect-ratio:16/9;width:100%;border-radius:.875rem;overflow:hidden;background:var(--card)}
+#mv-player iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000}
+.mvmain p{font-size:.875rem;line-height:1.6;color:var(--dim);max-width:46rem}
+#mv-back{display:inline-flex;align-items:center;gap:.375rem}
+#mv-back svg{width:1rem;height:1rem;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+@media (max-width:820px){.mvdetail{grid-template-columns:1fr}.mvside img{max-width:12rem}}
 /* diagnostics (inside Settings) */
 .dg .dgbar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;position:sticky;top:-2rem;z-index:2;margin:0 0 1rem;padding:.5rem 0;background:var(--panel)}
 #dg-summary{margin-left:auto;color:var(--dim);font-size:.8125rem;font-variant-numeric:tabular-nums}
@@ -518,6 +541,7 @@ button.ib:hover,button.btn:hover,button.nb:hover,.mtabs button:hover,#ai-list bu
 <div class="chips" id="music-chips"></div>
 <label class="switch" style="margin-top:1.5rem"><div><b>ai</b><small>Nex.AI, an assistant in its own tab</small></div><input type="checkbox" id="ai-on"></label>
 <label class="switch"><div><b>games</b><small>a library of browser games that opens in a tab</small></div><input type="checkbox" id="games-on"></label>
+<label class="switch"><div><b>movies</b><small>free movies and classic tv from the Internet Archive, plus pictures, seasons, trailers and where-to-watch links from TMDB</small></div><input type="checkbox" id="movies-on"></label>
 </div>
 <div class="sec" id="sec-diagnostics">
 <h2>diagnostics</h2>
@@ -545,13 +569,38 @@ button.ib:hover,button.btn:hover,button.nb:hover,.mtabs button:hover,#ai-list bu
 <section class="page" id="page-games">
 <div class="gpage">
 <div id="g-browse" class="gbrowse">
-<div class="ghead"><div class="mtabs" id="gtabs"><button class="on" data-g="cherri">cherri</button><button data-g="gn">gn-math</button><button data-g="obsidian">obsidian</button><button data-g="ugs">ugs</button><button data-g="duckmath">duckmath</button><button data-g="weslack">weslack</button></div>
+<div class="ghead"><div class="mtabs" id="gtabs"><button class="on" data-g="gn">gn-math</button><button data-g="obsidian">obsidian</button><button data-g="ugs">ugs</button><button data-g="duckmath">duckmath</button><button data-g="weslack">weslack</button></div>
 <input id="gq" type="text" placeholder="search games" autocomplete="off" spellcheck="false"><small id="gcount"></small></div>
 <div class="gscroll"><div id="ggrid" class="ggrid"></div><button class="btn" id="gmore" hidden>show more</button><div class="msg" id="gmsg"></div></div>
 </div>
 <div id="g-view" hidden>
 <div class="ghead"><button class="btn" id="g-back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>all games</button><b id="g-title" style="flex:1;min-width:6rem"></b><button class="btn" id="g-reload">reload</button><button class="btn" id="g-open">open in its own tab</button></div>
 <div class="gframes" id="gplay"></div><div class="msg" id="gvmsg"></div>
+</div>
+</div>
+</section>
+<section class="page" id="page-movies">
+<div class="gpage">
+<div id="mv-browse" class="gbrowse">
+<div class="ghead"><div class="mtabs" id="mvtabs"><button class="on" data-mv="all">all</button><button data-mv="movie">movies</button><button data-mv="tv">tv shows</button></div>
+<input id="mvq" type="text" placeholder="search movies and tv shows" autocomplete="off" spellcheck="false"><small id="mvcount"></small></div>
+<div class="gscroll"><div id="mvgrid" class="ggrid mvgrid"></div><div class="msg" id="mvmsg"></div><p class="mvnote" id="mvnote"></p></div>
+</div>
+<div id="mv-view" hidden>
+<div class="ghead"><button class="btn" id="mv-back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>all titles</button><b id="mv-title" style="flex:1;min-width:6rem"></b><button class="btn" id="mv-open">open in its own tab</button></div>
+<div class="mvdetail">
+<div class="mvside">
+<img id="mv-poster" alt="">
+<div class="mvmeta" id="mv-meta"></div>
+<div id="mv-sel" hidden>
+<label class="fld"><span>season</span><select id="mv-season"></select></label>
+<label class="fld"><span>episode</span><select id="mv-episode"></select></label>
+</div>
+<div class="row"><button class="btn primary" id="mv-play">play</button><button class="btn" id="mv-trailer" hidden>trailer</button></div>
+<div id="mv-where"></div>
+</div>
+<div class="mvmain"><div id="mv-player"></div><div class="msg" id="mv-msg"></div><p id="mv-overview"></p></div>
+</div>
 </div>
 </div>
 </section>
@@ -715,7 +764,7 @@ window.__nvDiagMount = (root) => {
   def("This browser", "Can this device reach the sites Nex.Velo uses?", {}, async () => {
     const sites = [
       ["cdn.jsdelivr.net (game files)", "https://cdn.jsdelivr.net/npm/lodash@4/package.json"], ["raw.githubusercontent.com (games, music data)", "https://raw.githubusercontent.com/github/gitignore/main/Go.gitignore"],
-      ["gitlab.com (Cherri games)", "https://gitlab.com/gitlab-org/gitlab/-/raw/master/LICENSE"], ["huggingface.co (AI model)", "https://huggingface.co/api/models/HuggingFaceTB/SmolLM2-360M-Instruct"],
+      ["huggingface.co (AI model)", "https://huggingface.co/api/models/HuggingFaceTB/SmolLM2-360M-Instruct"],
       ["api.audius.co (music)", "https://api.audius.co/v1/tracks/trending?app_name=NexVelo"], ["soundcloud.com (music)", "https://soundcloud.com/favicon.ico"], ["www.youtube.com (music)", "https://www.youtube.com/favicon.ico"],
     ];
     const kids = await Promise.all(sites.map(async ([name, u]) => {
@@ -784,8 +833,8 @@ window.__nvDiagMount = (root) => {
   def("Music", "Recommended songs", { slow: true }, async () => { const d = await getJSON("/api/music/recommended", 90000); if (!(d.tracks || []).length) throw new Error("no recommendations came back"); return d.tracks.length + " songs"; });
 
   // --- games
-  const SRCS = [["cherri", "Cherri"], ["gn", "GN Math"], ["obsidian", "Obsidian"], ["ugs", "UGS"]];
-  def("Games", "Game lists (Cherri, GN Math, Obsidian, UGS)", {}, async () => {
+  const SRCS = [["gn", "GN Math"], ["obsidian", "Obsidian"], ["ugs", "UGS"]];
+  def("Games", "Game lists (GN Math, Obsidian, UGS)", {}, async () => {
     const kids = [];
     for (const [k, label] of SRCS) { try { const g = await games(k); kids.push({ name: label, ok: g.length > 0, detail: g.length + " games, e.g. " + g.slice(0, 3).map((x) => x.name).join(", ") }); } catch (e) { kids.push({ name: label, ok: false, detail: String(e.message || e) }); } }
     return { detail: kids.filter((k) => k.ok).length + " of " + SRCS.length + " lists loaded", kids };
@@ -825,6 +874,48 @@ window.__nvDiagMount = (root) => {
       }
     }
     return { detail: kids.filter((k) => k.ok).length + " of " + kids.length + " pages showed content", kids };
+  });
+
+  // --- movies
+  def("Movies", "Movie sources (the server tries each one. at least one must work)", {}, async () => {
+    const d = await getJSON("/api/movies/health", 60000);
+    const kids = d.sources.map((s) => ({ name: s.name, ok: s.ok, detail: s.detail }));
+    if (!d.anyOk) return { state: "fail", detail: "none of the movie sources work, so the Movies app can't show or play anything", kids };
+    return { state: "pass", detail: kids.filter((k) => k.ok).length + " source(s) working", kids };
+  });
+  def("Movies", "Movie search, seasons and episodes (as the Movies page uses them)", {}, async () => {
+    const d = await getJSON("/api/movies/search?q=night&type=all", 45000);
+    if (!(d.items || []).length) throw new Error("search found nothing" + (d.errors && Object.keys(d.errors).length ? ": " + Object.entries(d.errors).map(([k, v]) => k + " (" + v + ")").join(", ") : ""));
+    const kids = [{ name: "search", ok: true, detail: d.items.length + " titles, e.g. " + d.items.slice(0, 3).map((x) => x.title).join(", ") }];
+    const tv = d.items.find((x) => x.type === "tv");
+    if (tv) {
+      try {
+        const t = await getJSON("/api/movies/title?id=" + encodeURIComponent(tv.id), 30000), s = (t.seasons || [])[0];
+        if (s) { const e = await getJSON("/api/movies/episodes?id=" + encodeURIComponent(tv.id) + "&season=" + s.number, 30000); kids.push({ name: "tv show: " + tv.title, ok: (e.episodes || []).length > 0, detail: t.seasons.length + " season(s). season " + s.number + " has " + (e.episodes || []).length + " episode(s)" }); }
+        else kids.push({ name: "tv show: " + tv.title, ok: null, detail: "no seasons listed" });
+      } catch (e) { kids.push({ name: "tv show: " + tv.title, ok: false, detail: String(e.message || e) }); }
+    }
+    return { detail: d.items.length + " titles", kids };
+  });
+  def("Movies", "Movie pictures load through the server", {}, async () => {
+    const d = await getJSON("/api/movies/search?q=&type=movie", 45000);
+    const some = (d.items || []).filter((x) => x.poster).slice(0, 3);
+    if (!some.length) throw new Error("no title has a picture");
+    const kids = []; let ok = 0;
+    for (const it of some) {
+      const good = await new Promise((res) => { const im = new Image(); im.onload = () => res(true); im.onerror = () => res(false); im.src = url("/api/movies/img?u=" + encodeURIComponent(it.poster)); setTimeout(() => res(false), 12000); });
+      if (good) ok++; kids.push({ name: it.title, ok: good, detail: good ? "picture loaded" : "picture did not load" });
+    }
+    return { detail: ok + " of " + some.length + " pictures loaded", kids, state: ok ? undefined : "fail" };
+  });
+  def("Movies", "A movie can be played (finds a working source, as the Play button does)", { slow: true }, async () => {
+    const d = await getJSON("/api/movies/search?q=night&type=movie", 45000);
+    const it = (d.items || []).find((x) => x.playable) || (d.items || [])[0];
+    if (!it) throw new Error("no movie to try");
+    let r; try { r = await getJSON("/api/movies/play?id=" + encodeURIComponent(it.id) + "&alts=" + encodeURIComponent((it.alts || []).map((a) => a.id).join(",")), 45000); }
+    catch (e) { throw new Error("none of the sources could play " + it.title + ": " + e.message); }
+    if (r.kind !== "embed") throw new Error("no source has a free stream of " + it.title + " (only information)");
+    return "\"" + it.title + "\" plays from " + r.source + " (" + r.url + ")";
   });
 
   // --- AI
@@ -914,7 +1005,7 @@ in its address, so a CDN or browser can never hand out an old copy of a file. */
 (function () {
 var meta = document.querySelector('meta[name="nv-version"]');
 var mine = meta ? meta.content : "";
-var files = ["/baremux/index.js", "/scram/scramjet.all.js", "/wallpapers.js", "/app.js", "/music.js", "/ai.js", "/games.js", "/servers.js"];
+var files = ["/baremux/index.js", "/scram/scramjet.all.js", "/wallpapers.js", "/app.js", "/music.js", "/ai.js", "/games.js", "/movies.js", "/servers.js"];
 function done() { window.__nvScriptsDone = true; window.dispatchEvent(new Event("nv-scripts")); }
 function load(i, v) {
 if (i >= files.length) return done();
