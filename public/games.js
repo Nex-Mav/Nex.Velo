@@ -1,19 +1,19 @@
-/* Games: open-source libraries (Cherri Games, GN Math, Obsidian's Unblocked Revamped) and two game sites (DuckMath, Weslack).
+/* Games: open-source libraries (GN Math, Obsidian's Unblocked Revamped, UGS) and two game sites (DuckMath, Weslack).
    Search, pick a game, and it opens in its own proxied frame, without the site's menus around it. */
 (() => {
   "use strict";
   const { LS, proxyFrame, toast, esc, apiBase } = window.NV;
   const $ = (s, r = document) => r.querySelector(s);
   const PAGE = 60;
-  const SOURCES = ["cherri", "gn", "obsidian", "ugs", "duckmath", "weslack"];
+  const SOURCES = ["gn", "obsidian", "ugs", "duckmath", "weslack"];
   // These two are opened as whole websites through the proxy (no game list to read)
   // If a library's files won't load, its own website can still be opened through the proxy. (Change these addresses here if a site moves.)
-  const SITES = { gn: { label: "GN Math website", url: "https://gn-math.github.io/" }, cherri: { label: "Cherri website", url: "https://cherrion.top/" } };
+  const SITES = { gn: { label: "GN Math website", url: "https://gn-math.github.io/" } };
   const PROXIED = { duckmath: "https://duckmath.org/", weslack: "https://weslack.com/" };
-  const LABEL = { cherri: "Cherri", gn: "GN Math", obsidian: "Obsidian", ugs: "UGS", duckmath: "DuckMath", weslack: "Weslack" };
+  const LABEL = { gn: "GN Math", obsidian: "Obsidian", ugs: "UGS", duckmath: "DuckMath", weslack: "Weslack" };
 
   let src = (() => { try { return JSON.parse(LS.get("nexvelo.games", "{}")).src; } catch { return null; } })();
-  if (!SOURCES.includes(src)) src = "cherri";
+  if (!SOURCES.includes(src)) src = "gn"; // also catches a saved "cherri" from before it was removed
   const lists = {};
   let list = [], shown = 0, current = null;
 
