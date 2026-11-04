@@ -36,7 +36,7 @@ const defaultWisp = "wss://nex-velo.up.railway.app/wisp/"; // the Nex.Velo serve
 const settings = {
 wisp: defaultWisp, engine: "https://duckduckgo.com/?q=%s", adblock: true,
 theme: "black", wall: "none", wallUrl: "", blur: true, blurAmt: 14,
-clock: true, h24: true, music: true, games: true, ai: true, name: "",
+clock: true, h24: true, music: true, games: true, movies: true, ai: true, name: "",
 launch: "ask", launchRedirect: true, wispAuto: true,
 custom: { bg: "#14161a", fg: "#f2f2f2", accent: "#8ab4ff", clock: "", bar: "", font: "jetbrains", size: 100 },
 panicOn: true, panicKey: "F9", panicSite: "classroom", panicUrl: "", panicMode: "replace",
@@ -300,7 +300,7 @@ L.el.classList.add("out"); setTimeout(() => { if (!L.on) L.el.hidden = true; }, 
 // kinds: "web" (home page or a proxied site), "settings", "games", "music", "ai"
 const tabs = [];
 let active = null, uid = 0, restoring = false;
-const PAGES = { settings: $("#page-settings"), music: $("#page-music"), ai: $("#page-ai"), games: $("#page-games") };
+const PAGES = { settings: $("#page-settings"), music: $("#page-music"), ai: $("#page-ai"), games: $("#page-games"), movies: $("#page-movies") };
 const X_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 const isHome = (t) => t.kind === "web" && !t.frame;
 
@@ -335,6 +335,7 @@ paintChip(t); select(t); tickClock(); renderMarks();
 if (kind === "settings") loadSettingsUI();
 if (kind === "ai" && NV.onAiOpen) NV.onAiOpen();
 if (kind === "games" && NV.onGamesOpen) NV.onGamesOpen();
+if (kind === "movies" && NV.onMoviesOpen) NV.onMoviesOpen();
 if (opts.url && !opts.lazy) go(t, opts.url);
 else if (kind === "web" && !opts.lazy) t.input.focus({ preventScroll: true });
 return t;
@@ -372,8 +373,8 @@ if (ex) { select(ex); if (kind === "settings") loadSettingsUI(); } else newTab({
 }
 
 /* ----- addresses like Nex.Velo/Music/Playlists: shown in the address bar, and typed to jump straight there ----- */
-const KIND_LABEL = { music: "Music", games: "Games", ai: "AI", settings: "Settings" };
-const titleSlug = (s) => (s === "ugs" ? "UGS" : s.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join("-"));
+const KIND_LABEL = { music: "Music", games: "Games", movies: "Movies", ai: "AI", settings: "Settings" };
+const titleSlug = (s) => ({ ugs: "UGS", "gn-math": "GN-Math" }[s] || s.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join("-"));
 function currentSub(kind) {
 if (kind === "music") return $("#page-music .mtabs .on")?.dataset.mt || "";
 if (kind === "games") { const k = $("#gtabs .on")?.dataset.g || ""; return k === "gn" ? "gn-math" : k; }
@@ -387,7 +388,7 @@ sub = sub.toLowerCase();
 if (app === "music" && ["search", "playlists", "recent"].includes(sub)) NV.musicShowTab && NV.musicShowTab(sub);
 else if (app === "games") {
 const k = sub === "gn-math" || sub === "gnmath" ? "gn" : sub;
-if (["cherri", "gn", "obsidian", "ugs", "duckmath", "weslack"].includes(k)) NV.gamesShowSource && NV.gamesShowSource(k, true);
+if (["gn", "obsidian", "ugs", "duckmath", "weslack"].includes(k)) NV.gamesShowSource && NV.gamesShowSource(k, true);
 } else if (app === "settings") {
 const id = sub === "apps" ? "extensions" : sub;
 if ($("#sec-" + id)) showSec(id);
@@ -609,7 +610,7 @@ loadCustomUI();
 $("#wisp-url").value = settings.wisp; $("#engine").value = settings.engine;
 $("#adblock").checked = settings.adblock; $("#clock").checked = settings.clock; $("#h24").checked = settings.h24;
 $("#blur").checked = settings.blur; $("#blur-amt").value = settings.blurAmt; $("#wall-url").value = settings.wallUrl;
-$("#wisp-auto").checked = settings.wispAuto !== false; $("#launch-mode").value = settings.launch; $("#launch-redirect").checked = settings.launchRedirect; $("#panic-on").checked = settings.panicOn; $("#panic-key").textContent = settings.panicKey; $("#panic-site").value = settings.panicSite; $("#panic-url").value = settings.panicUrl; $("#panic-url-fld").hidden = settings.panicSite !== "custom"; $("#panic-mode").value = settings.panicMode; $("#music-on").checked = settings.music; $("#games-on").checked = settings.games; $("#ai-on").checked = settings.ai; $("#name").value = settings.name;
+$("#wisp-auto").checked = settings.wispAuto !== false; $("#launch-mode").value = settings.launch; $("#launch-redirect").checked = settings.launchRedirect; $("#panic-on").checked = settings.panicOn; $("#panic-key").textContent = settings.panicKey; $("#panic-site").value = settings.panicSite; $("#panic-url").value = settings.panicUrl; $("#panic-url-fld").hidden = settings.panicSite !== "custom"; $("#panic-mode").value = settings.panicMode; $("#music-on").checked = settings.music; $("#games-on").checked = settings.games; $("#movies-on").checked = settings.movies; $("#ai-on").checked = settings.ai; $("#name").value = settings.name;
 buildAppearance(); say("");
 NV.refreshMusicChips && NV.refreshMusicChips();
 }
@@ -671,6 +672,7 @@ toast("escape key set to " + settings.panicKey);
 }, true);
 $("#ai-on").addEventListener("change", (e) => { settings.ai = e.target.checked; save(); });
 $("#games-on").addEventListener("change", (e) => { settings.games = e.target.checked; save(); });
+$("#movies-on").addEventListener("change", (e) => { settings.movies = e.target.checked; save(); });
 $("#name").addEventListener("input", (e) => { settings.name = e.target.value.trim(); save(); tickClock(); });
 
 /* account: backup / restore / reset */
@@ -698,6 +700,7 @@ DATA_KEYS.forEach(LS.del); location.reload();
 /* ================= Apps (the nine-dot button in the top bar) ================= */
 const APP_SVG = {
 games: '<svg viewBox="0 0 24 24"><path d="M6 9h12a3 3 0 0 1 3 3.2l-.6 4A2.4 2.4 0 0 1 16 17.3L15 15H9l-1 2.3a2.4 2.4 0 0 1-4.4-1.1l-.6-4A3 3 0 0 1 6 9z"/><path d="M8 11v3M6.5 12.5h3M16 12h.01M18 13.5h.01"/></svg>',
+movies: '<svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M17 2l-5 5-5-5"/></svg>',
 music: '<svg viewBox="0 0 24 24"><path d="M9 18V6l11-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></svg>',
 ai: '<svg viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z"/></svg>',
 servers: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>',
@@ -708,6 +711,7 @@ settings: '<svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><c
 const APPS = [
 ["games", "Games", () => settings.games, () => openPage("games")],
 ["music", "Music", () => settings.music, () => openPage("music")],
+["movies", "Movies", () => settings.movies, () => openPage("movies")],
 ["ai", "AI", () => settings.ai, () => openPage("ai")],
 ];
 let appsOpen = false, appsTimer = 0;
@@ -741,7 +745,7 @@ addEventListener("blur", () => closeApps()); // clicking into a page frame
 const STEPS = [
 ["#tabs", "these are your tabs. every tab is its own proxied page."],
 ["#new-tab", "open a new tab here."],
-["#apps-btn", "the nine dots open your apps: games, music and ai."],
+["#apps-btn", "the nine dots open your apps: games, music, movies and ai."],
 ["#open-settings", "themes, wallpapers, your wisp server and more."],
 [".view.active .omni", "type a search or a web address and press enter."],
 ];
@@ -802,7 +806,7 @@ return true;
 }
 apiReady.then(renderMarks);
 const checkModules = () => {
-const need = { music: "music.js", ai: "ai.js", games: "games.js", servers: "servers.js" };
+const need = { music: "music.js", ai: "ai.js", games: "games.js", movies: "movies.js", servers: "servers.js" };
 const miss = Object.entries(need).filter(([k]) => !NV.loaded[k]).map(([, f]) => f);
 if (miss.length) showBanner("these parts couldn't start: " + miss.join(", ") + ". upload the newest files to the public folder and clear the CDN cache.");
 };
