@@ -38,7 +38,7 @@ const defaultWisp = "wss://nex-velo.up.railway.app/wisp/"; // the Nex.Velo serve
 const settings = {
   wisp: defaultWisp, engine: "https://duckduckgo.com/?q=%s", adblock: true,
   theme: "black", wall: "none", wallUrl: "", blur: true, blurAmt: 14,
-  clock: true, h24: true, music: true, games: true, movies: true, ai: true, name: "",
+  clock: true, h24: true, music: true, games: true, movies: true, tools: true, ai: true, name: "",
   launch: "ask", launchRedirect: true, wispAuto: true,
   custom: { bg: "#14161a", fg: "#f2f2f2", accent: "#8ab4ff", clock: "", bar: "", font: "jetbrains", size: 100 },
   panicOn: true, panicKey: "F9", panicSite: "classroom", panicUrl: "", panicMode: "replace",
@@ -297,7 +297,7 @@ function panicHandler(e) {
 addEventListener("keydown", panicHandler, true);
 
 /* ================= URL handling ================= */
-const ALIAS = /^(?:https?:\/\/)?nex\.?velo(?:\/(?:games|music|ai|settings|servers)(?:\/[a-z0-9-]+)?)?\/?$/i;
+const ALIAS = /^(?:https?:\/\/)?nex\.?velo(?:\/(?:games|music|ai|settings|servers|entertainment|tools|movies)(?:\/[a-z0-9-]+)?)?\/?$/i;
 function resolve(raw) {
   const v = raw.trim();
   if (!v) return null;
@@ -371,7 +371,9 @@ function loaderStop(L) {
 // kinds: "web" (home page or a proxied site), "settings", "games", "music", "ai"
 const tabs = [];
 let active = null, uid = 0, restoring = false;
-const PAGES = { settings: $("#page-settings"), music: $("#page-music"), ai: $("#page-ai"), games: $("#page-games"), movies: $("#page-movies") };
+// Entertainment and Tools are built by entertainment.js and tools.js. Their empty pages are made here so saved tabs can come back before those files finish loading.
+const makePage = (id) => { let n = $("#" + id); if (!n) { n = document.createElement("section"); n.className = "page"; n.id = id; n.innerHTML = '<div class="msg" style="padding:2rem">loading…</div>'; $("#pages").appendChild(n); } return n; };
+const PAGES = { settings: $("#page-settings"), music: $("#page-music"), ai: $("#page-ai"), games: $("#page-games"), entertainment: makePage("page-entertainment"), tools: makePage("page-tools") };
 const X_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 const isHome = (t) => t.kind === "web" && !t.frame;
 
@@ -406,7 +408,8 @@ function newTab(opts = {}) {
   if (kind === "settings") loadSettingsUI();
   if (kind === "ai" && NV.onAiOpen) NV.onAiOpen();
   if (kind === "games" && NV.onGamesOpen) NV.onGamesOpen();
-  if (kind === "movies" && NV.onMoviesOpen) NV.onMoviesOpen();
+  if (kind === "entertainment" && NV.onEntOpen) NV.onEntOpen();
+  if (kind === "tools" && NV.onToolsOpen) NV.onToolsOpen();
   if (opts.url && !opts.lazy) go(t, opts.url);
   else if (kind === "web" && !opts.lazy) t.input.focus({ preventScroll: true });
   return t;
@@ -439,18 +442,21 @@ function closeTab(t) {
 }
 
 function openPage(kind) {
+  if (kind === "movies") { kind = "entertainment"; NV.entShow && NV.entShow("movies"); } // Movies is now a section of Entertainment
   if (!PAGES[kind]) return showBanner("the " + kind + " page isn't in this index.html. upload the newest index.html and clear the CDN cache.");
   const ex = tabs.find((t) => t.kind === kind);
   if (ex) { select(ex); if (kind === "settings") loadSettingsUI(); } else newTab({ kind });
 }
 
 /* ----- addresses like Nex.Velo/Music/Playlists: shown in the address bar, and typed to jump straight there ----- */
-const KIND_LABEL = { music: "Music", games: "Games", movies: "Movies", ai: "AI", settings: "Settings" };
+const KIND_LABEL = { music: "Music", games: "Games", entertainment: "Entertainment", tools: "Tools", ai: "AI", settings: "Settings" };
 const titleSlug = (s) => ({ ugs: "UGS", "gn-math": "GN-Math" }[s] || s.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join("-"));
 function currentSub(kind) {
   if (kind === "music") return $("#page-music .mtabs .on")?.dataset.mt || "";
   if (kind === "games") { const k = $("#gtabs .on")?.dataset.g || ""; return k === "gn" ? "gn-math" : k; }
   if (kind === "settings") { const s = $(".snav .nb.on")?.dataset.sec || ""; return s === "extensions" ? "apps" : s; }
+  if (kind === "entertainment") return NV.entSection ? NV.entSection() : "";
+  if (kind === "tools") return NV.toolsCurrent ? NV.toolsCurrent() : "";
   return "";
 }
 const pageAddress = (kind) => "Nex.Velo/" + (KIND_LABEL[kind] || titleSlug(kind)) + (currentSub(kind) ? "/" + titleSlug(currentSub(kind)) : "");
@@ -463,13 +469,15 @@ function openSub(app, sub) {
   } else if (app === "settings") {
     const id = sub === "apps" ? "extensions" : sub;
     if ($("#sec-" + id)) showSec(id);
-  }
+  } else if (app === "entertainment") NV.entShow && NV.entShow(sub);
+  else if (app === "tools") NV.toolsShow && NV.toolsShow(sub);
 }
 // Returns true when the text was an address of one of our own pages (so nothing else should happen with it)
 function routeAlias(raw) {
   const m = String(raw).trim().match(/^(?:https?:\/\/)?nex\.?velo(?:\/([a-z]+))?(?:\/([a-z0-9-]+))?\/?$/i);
   if (!m) return false;
-  const app = (m[1] || "").toLowerCase(), sub = m[2] || "";
+  let app = (m[1] || "").toLowerCase(), sub = m[2] || "";
+  if (app === "movies") { app = "entertainment"; sub = sub || "movies"; } // Movies is now a section of Entertainment
   if (!app) return true;
   if (app === "servers") { openSettings("servers"); return true; }
   if (!PAGES[app]) return false; // not one of ours: it is a file on this site
@@ -690,7 +698,7 @@ function loadSettingsUI() {
   $("#wisp-url").value = settings.wisp; $("#engine").value = settings.engine;
   $("#adblock").checked = settings.adblock; $("#clock").checked = settings.clock; $("#h24").checked = settings.h24;
   $("#blur").checked = settings.blur; $("#blur-amt").value = settings.blurAmt; $("#wall-url").value = settings.wallUrl;
-  $("#wisp-auto").checked = settings.wispAuto !== false; $("#launch-mode").value = settings.launch; $("#launch-redirect").checked = settings.launchRedirect; $("#panic-on").checked = settings.panicOn; $("#panic-key").textContent = settings.panicKey; $("#panic-site").value = settings.panicSite; $("#panic-url").value = settings.panicUrl; $("#panic-url-fld").hidden = settings.panicSite !== "custom"; $("#panic-mode").value = settings.panicMode; $("#music-on").checked = settings.music; $("#games-on").checked = settings.games; $("#movies-on").checked = settings.movies; $("#ai-on").checked = settings.ai; $("#name").value = settings.name;
+  $("#wisp-auto").checked = settings.wispAuto !== false; $("#launch-mode").value = settings.launch; $("#launch-redirect").checked = settings.launchRedirect; $("#panic-on").checked = settings.panicOn; $("#panic-key").textContent = settings.panicKey; $("#panic-site").value = settings.panicSite; $("#panic-url").value = settings.panicUrl; $("#panic-url-fld").hidden = settings.panicSite !== "custom"; $("#panic-mode").value = settings.panicMode; $("#music-on").checked = settings.music; $("#games-on").checked = settings.games; $("#movies-on").checked = settings.movies; if ($("#tools-on")) $("#tools-on").checked = settings.tools; $("#ai-on").checked = settings.ai; $("#name").value = settings.name;
   buildAppearance(); say("");
   NV.refreshMusicChips && NV.refreshMusicChips();
 }
@@ -754,6 +762,17 @@ addEventListener("keydown", (e) => {
 $("#ai-on").addEventListener("change", (e) => { settings.ai = e.target.checked; save(); });
 $("#games-on").addEventListener("change", (e) => { settings.games = e.target.checked; save(); });
 $("#movies-on").addEventListener("change", (e) => { settings.movies = e.target.checked; save(); });
+// the Movies switch in Settings > apps now controls Entertainment, and Tools gets a switch of its own
+(function appsSection() {
+  const m = $("#movies-on"), row = m && m.closest("label"); if (!row) return;
+  const b = $("b", row), sm = $("small", row);
+  if (b) b.textContent = "entertainment"; if (sm) sm.textContent = "movies, tv shows, books and audiobooks. everything is free and legal to watch, read or listen to";
+  if ($("#tools-on")) return;
+  const n = document.createElement("label"); n.className = "switch";
+  n.innerHTML = '<div><b>tools</b><small>a password generator, random numbers, word counter, converters and more</small></div><input type="checkbox" id="tools-on">';
+  row.after(n); const t = $("#tools-on"); t.checked = settings.tools;
+  t.addEventListener("change", (e) => { settings.tools = e.target.checked; save(); });
+})();
 $("#name").addEventListener("input", (e) => { settings.name = e.target.value.trim(); save(); tickClock(); });
 
 /* account: backup / restore / reset */
@@ -781,7 +800,8 @@ $("#reset").addEventListener("click", () => {
 /* ================= Apps (the nine-dot button in the top bar) ================= */
 const APP_SVG = {
   games: '<svg viewBox="0 0 24 24"><path d="M6 9h12a3 3 0 0 1 3 3.2l-.6 4A2.4 2.4 0 0 1 16 17.3L15 15H9l-1 2.3a2.4 2.4 0 0 1-4.4-1.1l-.6-4A3 3 0 0 1 6 9z"/><path d="M8 11v3M6.5 12.5h3M16 12h.01M18 13.5h.01"/></svg>',
-  movies: '<svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M17 2l-5 5-5-5"/></svg>',
+  entertainment: '<svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M17 2l-5 5-5-5"/></svg>',
+  tools: '<svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.4 2.4-2.6-.6-.6-2.6z"/></svg>',
   music: '<svg viewBox="0 0 24 24"><path d="M9 18V6l11-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></svg>',
   ai: '<svg viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z"/></svg>',
   servers: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>',
@@ -792,7 +812,8 @@ const APP_SVG = {
 const APPS = [
   ["games", "Games", () => settings.games, () => openPage("games")],
   ["music", "Music", () => settings.music, () => openPage("music")],
-  ["movies", "Movies", () => settings.movies, () => openPage("movies")],
+  ["entertainment", "Entertainment", () => settings.movies, () => openPage("entertainment")],
+  ["tools", "Tools", () => settings.tools, () => openPage("tools")],
   ["ai", "AI", () => settings.ai, () => openPage("ai")],
 ];
 let appsOpen = false, appsTimer = 0;
@@ -826,7 +847,7 @@ addEventListener("blur", () => closeApps()); // clicking into a page frame
 const STEPS = [
   ["#tabs", "these are your tabs. every tab is its own proxied page."],
   ["#new-tab", "open a new tab here."],
-  ["#apps-btn", "the nine dots open your apps: games, music, movies and ai."],
+  ["#apps-btn", "the nine dots open your apps: games, music, entertainment, tools and ai."],
   ["#open-settings", "themes, wallpapers, your wisp server and more."],
   [".view.active .omni", "type a search or a web address and press enter."],
 ];
@@ -862,6 +883,11 @@ const NV = window.NV = {
   syncChrome: () => syncChrome(), routeTo: (a) => routeAlias(a), panic: panicHandler,
   repairProxy: () => repairProxy(true),
 };
+// Entertainment and Tools live in their own files. They are loaded from here so index.html doesn't need to change.
+for (const f of ["entertainment.js", "tools.js"]) {
+  const s = document.createElement("script"); s.src = "/" + f; s.onerror = () => showBanner("couldn't load " + f + ". upload it to the public folder and refresh.");
+  document.head.appendChild(s);
+}
 applyTheme(); applyWall();
 $("#ver").textContent = "v" + VERSION;
 $("#logo").addEventListener("click", () => newTab());
@@ -869,7 +895,7 @@ $("#logo").addEventListener("click", () => newTab());
 restoring = true;
 let saved = null; try { saved = JSON.parse(LS.get("nexvelo.tabs", "null")); } catch {}
 if (saved && saved.t && saved.t.length) {
-  saved.t.forEach((x) => { if (x.k === "web" || PAGES[x.k]) if (!(PAGES[x.k] && tabs.some((t) => t.kind === x.k))) newTab({ kind: x.k, url: x.u, lazy: true }); });
+  saved.t.forEach((x) => { if (x.k === "movies") x.k = "entertainment"; if (x.k === "web" || PAGES[x.k]) if (!(PAGES[x.k] && tabs.some((t) => t.kind === x.k))) newTab({ kind: x.k, url: x.u, lazy: true }); });
 }
 restoring = false;
 if (!tabs.length) newTab(); else select(tabs[Math.min(Math.max(saved.a, 0), tabs.length - 1)] || tabs[0]);
