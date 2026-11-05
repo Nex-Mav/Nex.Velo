@@ -6,6 +6,10 @@
 
 import { Readable } from "node:stream";
 
+// Books and audiobooks (the Entertainment app) live in lib/library.js. If that file is missing, only they are unavailable.
+let registerLibrary = null;
+try { ({ registerLibrary } = await import("./library.js")); } catch (e) { console.warn("[nex.velo] lib/library.js could not be loaded:", String(e?.message || e).slice(0, 160)); }
+
 export function registerMovies(app, { withTimeout, UA, cached }) {
   const key = () => String(process.env.TMDB_API_KEY || process.env.TMDB_TOKEN || "").trim();
 
@@ -243,6 +247,9 @@ export function registerMovies(app, { withTimeout, UA, cached }) {
       return reply.send(Readable.fromWeb(up.body));
     } catch { reply.code(502); return "couldn't load the picture"; }
   });
+
+  if (registerLibrary) registerLibrary(app, { withTimeout, UA, cached });
+  else for (const r of ["books", "audiobooks", "audiobook", "audio", "img", "health"]) app.get("/api/ent/" + r, async (req, reply) => { reply.code(503); return { error: "the books server file (lib/library.js) is not on the server. upload it next to lib/api.js" }; });
 
   return { health: healthCheck };
 }
