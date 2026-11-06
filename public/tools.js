@@ -9,13 +9,22 @@
 
   const style = document.createElement("style");
   style.textContent = `
-.tl-wrap{max-width:46rem}
-.tl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(11rem,1fr));gap:.75rem}
-.tl-tile{display:flex;flex-direction:column;align-items:flex-start;gap:.5rem;padding:1rem;border-radius:1rem;text-align:left;min-width:0}
+.tl-wrap{max-width:46rem;margin:0 auto}
+.tl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(11rem,1fr));gap:.75rem;max-width:62rem;margin:0 auto}
+.tl-tile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.5rem;padding:1.125rem 1rem;border-radius:1rem;text-align:center;min-width:0}
 .tl-tile svg{width:1.5rem;height:1.5rem;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .tl-tile b{font-weight:500;font-size:.875rem}
 .tl-tile small{font-size:.6875rem;color:var(--dim);line-height:1.35}
-.tl-card{display:flex;flex-direction:column;gap:1rem;padding-bottom:2rem}
+.tl-card{display:flex;flex-direction:column;gap:1rem;padding-bottom:2rem;text-align:center}
+.tl-card .switch,.tl-card .tl-row,.tl-card .tl-pre,.tl-card .chk,.tl-card textarea{text-align:left}
+.tl-card .fld>span{display:block;text-align:center}
+.tl-card .row,.tl-card .tl-chips{justify-content:center}
+.tl-out{text-align:center}
+#tl-home .ghead{flex-direction:column;align-items:center;text-align:center;gap:.5rem}
+#tl-home .ghead input{width:min(22rem,100%)}
+#tl-view .ghead{position:relative;justify-content:flex-start}
+#tl-title{position:absolute;left:0;right:0;text-align:center;pointer-events:none;font-weight:500}
+.ck-row .ck-name{flex:1;min-width:0;text-align:left}.ck-row .ck-sub{display:block;font-size:.6875rem;color:var(--dim)}.ck-row .ck-t{font-size:1.125rem;font-variant-numeric:tabular-nums;flex:none}
 .tl-out{display:flex;gap:.75rem;align-items:center;padding:.875rem 1rem;border-radius:.875rem;background:var(--btn)}
 .tl-out>div{flex:1;min-width:0}
 .tl-out code,.tl-row code{font:inherit;word-break:break-all}
@@ -73,6 +82,70 @@ textarea.tl-ta:focus,.tl-in:focus{box-shadow:0 0 0 2px var(--focus)}
   const toggle = (id, title, sub, on = true) => `<label class="switch"><div><b>${title}</b>${sub ? `<small>${sub}</small>` : ""}</div><input type="checkbox" id="${id}"${on ? " checked" : ""}></label>`;
 
   /* ---------- tools ---------- */
+
+  const ZONES = [
+    ["United States · New York", "America/New_York"], ["United States · Chicago", "America/Chicago"], ["United States · Denver", "America/Denver"], ["United States · Los Angeles", "America/Los_Angeles"], ["United States · Anchorage", "America/Anchorage"], ["United States · Honolulu", "Pacific/Honolulu"],
+    ["Canada · Toronto", "America/Toronto"], ["Canada · Vancouver", "America/Vancouver"], ["Mexico · Mexico City", "America/Mexico_City"], ["Colombia · Bogotá", "America/Bogota"], ["Peru · Lima", "America/Lima"], ["Chile · Santiago", "America/Santiago"], ["Brazil · São Paulo", "America/Sao_Paulo"], ["Argentina · Buenos Aires", "America/Argentina/Buenos_Aires"],
+    ["United Kingdom · London", "Europe/London"], ["Ireland · Dublin", "Europe/Dublin"], ["Portugal · Lisbon", "Europe/Lisbon"], ["Spain · Madrid", "Europe/Madrid"], ["France · Paris", "Europe/Paris"], ["Germany · Berlin", "Europe/Berlin"], ["Italy · Rome", "Europe/Rome"], ["Netherlands · Amsterdam", "Europe/Amsterdam"], ["Sweden · Stockholm", "Europe/Stockholm"], ["Poland · Warsaw", "Europe/Warsaw"], ["Greece · Athens", "Europe/Athens"], ["Ukraine · Kyiv", "Europe/Kyiv"], ["Turkey · Istanbul", "Europe/Istanbul"], ["Russia · Moscow", "Europe/Moscow"],
+    ["Egypt · Cairo", "Africa/Cairo"], ["Nigeria · Lagos", "Africa/Lagos"], ["Kenya · Nairobi", "Africa/Nairobi"], ["South Africa · Johannesburg", "Africa/Johannesburg"],
+    ["Saudi Arabia · Riyadh", "Asia/Riyadh"], ["United Arab Emirates · Dubai", "Asia/Dubai"], ["Israel · Jerusalem", "Asia/Jerusalem"], ["Iran · Tehran", "Asia/Tehran"], ["Pakistan · Karachi", "Asia/Karachi"], ["India · Kolkata", "Asia/Kolkata"], ["Bangladesh · Dhaka", "Asia/Dhaka"],
+    ["Thailand · Bangkok", "Asia/Bangkok"], ["Vietnam · Ho Chi Minh City", "Asia/Ho_Chi_Minh"], ["Indonesia · Jakarta", "Asia/Jakarta"], ["Malaysia · Kuala Lumpur", "Asia/Kuala_Lumpur"], ["Singapore", "Asia/Singapore"], ["Philippines · Manila", "Asia/Manila"], ["China · Shanghai", "Asia/Shanghai"], ["Hong Kong", "Asia/Hong_Kong"], ["Taiwan · Taipei", "Asia/Taipei"], ["South Korea · Seoul", "Asia/Seoul"], ["Japan · Tokyo", "Asia/Tokyo"],
+    ["Australia · Perth", "Australia/Perth"], ["Australia · Sydney", "Australia/Sydney"], ["New Zealand · Auckland", "Pacific/Auckland"], ["UTC (universal time)", "UTC"],
+  ];
+  const ZONE_NAME = Object.fromEntries(ZONES.map(([l, z]) => [z, l]));
+  const LOCAL_TZ = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; } })();
+  const zoneLabel = (tz) => (tz === "local" ? "Your time zone · " + LOCAL_TZ.replace(/_/g, " ") : ZONE_NAME[tz] || tz.replace(/_/g, " "));
+  const allZones = () => { try { return Intl.supportedValuesOf("timeZone"); } catch { return []; } };
+  const validTz = (tz) => { try { new Intl.DateTimeFormat(undefined, { timeZone: tz }); return true; } catch { return false; } };
+
+  function mountClock(root, own) {
+    const store = (k, d) => { try { return JSON.parse(NV.LS.get("nexvelo.clock." + k, "null")) ?? d; } catch { return d; } };
+    const put = (k, v) => NV.LS.set("nexvelo.clock." + k, JSON.stringify(v));
+    let main = store("main", "local"), list = store("list", ["America/New_York", "Europe/London", "Asia/Tokyo"]).filter(validTz), h24 = store("h24", NV.settings.h24 !== false);
+    if (main !== "local" && !validTz(main)) main = "local";
+    const ticks = Array.from({ length: 12 }, (_, i) => `<line x1="50" y1="6" x2="50" y2="${i % 3 ? 9.5 : 12}" transform="rotate(${i * 30} 50 50)" stroke="var(--fg)" stroke-width="${i % 3 ? .8 : 1.6}" opacity=".55"/>`).join("");
+    const options = (withLocal, selected) => {
+      const known = new Set(ZONES.map((z) => z[1]));
+      return (withLocal ? `<option value="local"${selected === "local" ? " selected" : ""}>${esc(zoneLabel("local"))}</option>` : "") +
+        `<optgroup label="countries and cities">${ZONES.map(([l, z]) => `<option value="${z}"${selected === z ? " selected" : ""}>${esc(l)}</option>`).join("")}</optgroup>` +
+        `<optgroup label="every time zone">${allZones().filter((z) => !known.has(z)).map((z) => `<option value="${z}"${selected === z ? " selected" : ""}>${esc(z.replace(/_/g, " "))}</option>`).join("")}</optgroup>`;
+    };
+    root.innerHTML = `<div class="tl-card">
+<svg viewBox="0 0 100 100" width="168" height="168" role="img" aria-label="Analog clock" style="align-self:center"><circle cx="50" cy="50" r="47" fill="var(--btn)" stroke="color-mix(in srgb,var(--fg) 22%,transparent)"/>${ticks}
+<line id="ck-h" x1="50" y1="50" x2="50" y2="29" stroke="var(--fg)" stroke-width="3.2" stroke-linecap="round"/><line id="ck-m" x1="50" y1="50" x2="50" y2="17" stroke="var(--fg)" stroke-width="2.2" stroke-linecap="round"/><line id="ck-s" x1="50" y1="56" x2="50" y2="12" stroke="var(--accent)" stroke-width="1" stroke-linecap="round"/><circle cx="50" cy="50" r="2.6" fill="var(--accent)"/></svg>
+<div><div class="tl-big" id="ck-time"></div><div id="ck-date" style="margin-top:.25rem"></div><small id="ck-diff" style="color:var(--dim)"></small></div>
+<label class="fld"><span>show the time in</span><select class="tl-in" id="ck-main">${options(true, main)}</select></label>
+<div>${toggle("ck-24", "24-hour clock", "", h24)}</div>
+<label class="fld"><span>add another country or city</span><select class="tl-in" id="ck-add"><option value="">choose a place…</option>${options(false, "")}</select></label>
+<div class="tl-rows" id="ck-list"></div></div>`;
+    const q = (s) => root.querySelector(s);
+    const dtf = (tz, o) => new Intl.DateTimeFormat(undefined, { timeZone: tz === "local" ? undefined : tz, ...o });
+    const hm = (d, tz, secs) => dtf(tz, { hour: "2-digit", minute: "2-digit", second: secs ? "2-digit" : undefined, hour12: !h24 }).format(d);
+    const ymd = (d, tz) => { const p = Object.fromEntries(dtf(tz, { year: "numeric", month: "numeric", day: "numeric" }).formatToParts(d).map((x) => [x.type, +x.value])); return Date.UTC(p.year, p.month - 1, p.day) / 864e5; };
+    const offset = (d, tz) => { try { const v = new Intl.DateTimeFormat("en-US", { timeZone: tz === "local" ? LOCAL_TZ : tz, timeZoneName: "longOffset" }).formatToParts(d).find((x) => x.type === "timeZoneName").value, m = v.match(/GMT([+-])(\d{1,2})(?::?(\d{2}))?/); return m ? (m[1] === "-" ? -1 : 1) * (+m[2] * 60 + +(m[3] || 0)) : 0; } catch { return 0; } };
+    const diffText = (d, tz) => {
+      const dm = offset(d, tz) - offset(d, "local"), dd = ymd(d, tz) - ymd(d, "local");
+      const hrs = Math.abs(dm) / 60, nice = Number.isInteger(hrs) ? hrs : hrs.toFixed(2).replace(/0$/, "");
+      const base = dm === 0 ? "same time as you" : nice + (hrs === 1 ? " hour " : " hours ") + (dm > 0 ? "ahead of you" : "behind you");
+      return base + (dd > 0 ? " · tomorrow" : dd < 0 ? " · yesterday" : "");
+    };
+    const utcLabel = (d, tz) => { const m = offset(d, tz); return "UTC" + (m < 0 ? "-" : "+") + pad(Math.floor(Math.abs(m) / 60)) + ":" + pad(Math.abs(m) % 60); };
+    function paint() {
+      const d = new Date(), P = Object.fromEntries(dtf(main, { hour: "numeric", minute: "numeric", second: "numeric", hourCycle: "h23" }).formatToParts(d).map((x) => [x.type, +x.value]));
+      const hh = P.hour % 12 + P.minute / 60, set = (id, deg) => q(id).setAttribute("transform", `rotate(${deg} 50 50)`);
+      set("#ck-h", hh * 30); set("#ck-m", (P.minute + P.second / 60) * 6); set("#ck-s", P.second * 6);
+      q("#ck-time").textContent = hm(d, main, true);
+      q("#ck-date").textContent = dtf(main, { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(d);
+      q("#ck-diff").textContent = zoneLabel(main) + " · " + utcLabel(d, main) + (main === "local" ? "" : " · " + diffText(d, main));
+      q("#ck-list").innerHTML = list.map((tz, i) => `<div class="tl-row ck-row"><div class="ck-name"><b style="font-weight:500">${esc(zoneLabel(tz))}</b><span class="ck-sub">${esc(dtf(tz, { weekday: "short", day: "numeric", month: "short" }).format(d))} · ${esc(utcLabel(d, tz))} · ${esc(diffText(d, tz))}</span></div><code class="ck-t">${esc(hm(d, tz, false))}</code><button class="btn" type="button" data-rm="${i}" aria-label="Remove ${esc(zoneLabel(tz))}">remove</button></div>`).join("") || '<small style="color:var(--dim)">no other places yet. pick one above.</small>';
+    }
+    q("#ck-main").addEventListener("change", (e) => { main = e.target.value; put("main", main); paint(); });
+    q("#ck-24").addEventListener("change", (e) => { h24 = e.target.checked; put("h24", h24); paint(); });
+    q("#ck-add").addEventListener("change", (e) => { const z = e.target.value; e.target.value = ""; if (z && !list.includes(z)) { list.push(z); put("list", list); paint(); } });
+    q("#ck-list").addEventListener("click", (e) => { const b = e.target.closest("[data-rm]"); if (b) { list.splice(+b.dataset.rm, 1); put("list", list); paint(); } });
+    paint(); const id = setInterval(paint, 500); own.push(() => clearInterval(id));
+  }
+
   function mountPassword(root) {
     root.innerHTML = `<div class="tl-card">
 <div class="tl-out"><div><code id="pw-out"></code></div><button class="btn" id="pw-copy">copy</button></div>
@@ -369,6 +442,7 @@ textarea.tl-ta:focus,.tl-in:focus{box-shadow:0 0 0 2px var(--focus)}
     random: '<path d="M5 9h14M5 15h14M10 4L8 20M16 4l-2 16"/>',
     words: '<path d="M4 6h16M4 12h10M4 18h13"/>',
     time: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 6.5V12l4 2M12 3v1.2M21 12h-1.2M12 21v-1.2M3 12h1.2"/>',
     colour: '<path d="M12 3a9 9 0 1 0 0 18c1.5 0 2-1 1.5-2-.6-1.2.2-2.5 1.6-2.5H17a4 4 0 0 0 4-4A9 9 0 0 0 12 3z"/><path d="M7.5 11h.01M10 7.5h.01M14 7.5h.01"/>',
     iframe: '<path d="M8 8l-4 4 4 4M16 8l4 4-4 4M14 5l-4 14"/>',
     case: '<path d="M3 18l4.5-11L12 18M4.8 14h5.4M15 18v-6a3 3 0 0 1 6 0v6M15 15h6"/>',
@@ -378,6 +452,7 @@ textarea.tl-ta:focus,.tl-in:focus{box-shadow:0 0 0 2px var(--focus)}
     timer: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 3h6"/>',
   };
   const TOOLS = [
+    { id: "clock", name: "clock", desc: "your time, or any country's time", ic: "clock", mount: mountClock },
     { id: "password", name: "password generator", desc: "strong random passwords you can copy", ic: "password", mount: mountPassword },
     { id: "random-number", name: "random number", desc: "pick the range and how many", ic: "random", mount: mountRandom },
     { id: "word-counter", name: "word counter", desc: "words, characters, reading time", ic: "words", mount: mountWords },
@@ -394,7 +469,7 @@ textarea.tl-ta:focus,.tl-in:focus{box-shadow:0 0 0 2px var(--focus)}
   page.innerHTML = `<div class="gpage">
 <div id="tl-home" class="gbrowse"><div class="ghead"><h2>tools</h2><input id="tl-q" type="text" placeholder="find a tool" autocomplete="off" spellcheck="false"><small id="tl-count"></small></div>
 <div class="gscroll"><div class="tl-grid" id="tl-grid"></div><div class="msg" id="tl-none" hidden>no tool matches that.</div></div></div>
-<div id="tl-view" class="gbrowse" hidden><div class="ghead"><button class="btn" id="tl-back" style="display:inline-flex;align-items:center;gap:.375rem">${BACK}all tools</button><b id="tl-title" style="flex:1;min-width:6rem"></b></div>
+<div id="tl-view" class="gbrowse" hidden><div class="ghead"><button class="btn" id="tl-back" style="display:inline-flex;align-items:center;gap:.375rem">${BACK}all tools</button><b id="tl-title"></b></div>
 <div class="gscroll"><div class="tl-wrap" id="tl-body"></div></div></div></div>`;
 
   let curTool = "", cleanup = [];
