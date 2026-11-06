@@ -39,7 +39,7 @@ const settings = {
   wisp: defaultWisp, engine: "https://duckduckgo.com/?q=%s", adblock: true,
   theme: "black", wall: "none", wallUrl: "", blur: true, blurAmt: 14,
   clock: true, h24: true, music: true, games: true, movies: true, tools: true, ai: true, name: "",
-  launch: "ask", launchRedirect: true, wispAuto: true,
+  launch: "ask", launchRedirect: true, wispAuto: true, mode: "normal",
   custom: { bg: "#14161a", fg: "#f2f2f2", accent: "#8ab4ff", clock: "", bar: "", font: "jetbrains", size: 100 },
   panicOn: true, panicKey: "F9", panicSite: "classroom", panicUrl: "", panicMode: "replace",
 };
@@ -276,7 +276,9 @@ function applyWall() {
   $("#wall").style.backgroundImage = src ? `url("${src.replace(/"/g, "%22")}")` : "";
   $("#wall").style.setProperty("--blur", settings.blur ? settings.blurAmt + "px" : "0px");
   document.body.classList.toggle("has-wall", !!src);
+  if (window.NV && NV.onWall) NV.onWall();
 }
+const wallSrcNow = () => { const src = wallSrc(settings.wall); return settings.wall === "custom" && !/^(https?:|data:image\/)/i.test(src || "") ? null : src; };
 
 /* ================= Escape key (the panic key) ================= */
 let capturing = false; // true while Settings is waiting for you to press the new key
@@ -378,11 +380,12 @@ const X_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" strok
 const isHome = (t) => t.kind === "web" && !t.frame;
 
 function saveTabs() {
-  if (restoring) return;
+  if (restoring || NV.desktopMode) return; // desktop mode keeps its windows in desktop.js
   LS.set("nexvelo.tabs", JSON.stringify({ a: tabs.indexOf(active), t: tabs.map((t) => ({ k: t.kind, u: t.frame ? t.url : t.pendingUrl || "" })) }));
 }
 
 function newTab(opts = {}) {
+  if (NV.desktopMode && !opts.host) return NV.desktopOpen(opts); // desktop mode: every tab is a window
   const kind = opts.kind || "web";
   if (kind !== "web" && !PAGES[kind]) { showBanner("the " + kind + " page isn't in this index.html. upload the newest index.html and clear the CDN cache."); return null; }
   const t = { id: ++uid, kind, title: kind === "web" ? "New tab" : kind, url: "", frame: null, pendingUrl: null, loader: null };
@@ -401,8 +404,8 @@ function newTab(opts = {}) {
   t.chip.addEventListener("pointerdown", (e) => { if (!e.target.closest(".x")) select(t); });
   $(".x", t.chip).addEventListener("click", (e) => { e.stopPropagation(); closeTab(t); });
   tabs.push(t);
-  $("#tabs").appendChild(t.chip);
-  $("#views").appendChild(t.view);
+  if (opts.host) { t.windowed = true; opts.host.appendChild(t.view); } // desktop mode: the page lives in its own window
+  else { $("#tabs").appendChild(t.chip); $("#views").appendChild(t.view); }
   if (opts.url && opts.lazy) { t.pendingUrl = opts.url; t.title = hostOf(opts.url); }
   paintChip(t); select(t); tickClock(); renderMarks();
   if (kind === "settings") loadSettingsUI();
@@ -415,15 +418,16 @@ function newTab(opts = {}) {
   return t;
 }
 
-const paintChip = (t) => { $(".t", t.chip).textContent = t.title; t.chip.title = t.title; };
+const paintChip = (t) => { $(".t", t.chip).textContent = t.title; t.chip.title = t.title; if (t.onTitle) t.onTitle(t.title); };
 
 function select(t) {
   active = t;
-  for (const x of tabs) { const on = x === t; x.view.classList.toggle("active", on); x.chip.setAttribute("aria-selected", on); }
-  t.chip.scrollIntoView({ inline: "nearest", block: "nearest" });
+  for (const x of tabs) { const on = x === t || x.windowed; x.view.classList.toggle("active", on); x.chip.setAttribute("aria-selected", x === t); } // windows are all visible at once
+  if (!t.windowed) t.chip.scrollIntoView({ inline: "nearest", block: "nearest" });
   if (t.pendingUrl && !restoring) { const u = t.pendingUrl; t.pendingUrl = null; go(t, u); }
   syncChrome(); saveTabs();
   window.NV && NV.onTab && NV.onTab(t);
+  if (t.onFocus) t.onFocus();
 }
 
 function closeTab(t) {
@@ -437,6 +441,7 @@ function closeTab(t) {
     if (node && node.parentNode === t.view) $("#pages").appendChild(node);
     t.chip.remove(); t.view.remove();
   }, reduceMotion() ? 0 : 190);
+  if (NV.desktopMode) { if (wasActive) active = null; return; } // closing a window never opens another one
   if (!tabs.length) return newTab();
   if (wasActive) select(tabs[Math.min(i, tabs.length - 1)]); else saveTabs();
 }
@@ -507,7 +512,7 @@ async function go(t, raw) {
       syncTab(t);
     });
   }
-  t.url = url; t.title = hostOf(url); paintChip(t);
+  t.url = url; t.title = hostOf(url); paintChip(t); if (t.onSync) t.onSync(t);
   t.loading = true; t.loader.creep = true;
   clearTimeout(t.stallTimer);
   t.stallTimer = setTimeout(() => { if (t.loading && t === active) showBanner("this page is taking a long time to start. if it stays white, press repair.", true); }, 20000);
@@ -539,6 +544,7 @@ function syncTab(t) {
   const u = liveUrl(t); if (u) t.url = u;
   let title = ""; try { title = t.frame.frame.contentDocument.title; } catch {}
   t.title = title || hostOf(t.url) || "New tab"; paintChip(t);
+  if (t.onSync) t.onSync(t);
   if (t === active) syncChrome();
   if (before !== t.url) saveTabs();
 }
@@ -554,19 +560,20 @@ function syncChrome() {
   if (browsing && document.activeElement !== $("#address")) $("#address").value = displayUrl(active.url);
   document.title = browsing ? `${active.title} – Nex.Velo` : active && PAGES[active.kind] ? `${active.kind} – Nex.Velo` : "Nex.Velo";
 }
-setInterval(() => active && active.frame && syncTab(active), 900);
+setInterval(() => { for (const t of tabs) if (t.frame && (t === active || t.windowed)) syncTab(t); }, 900);
 
-const hist = (fn) => { try { fn(active.frame.frame.contentWindow.history); } catch {} };
-$("#back").addEventListener("click", () => hist((h) => h.back()));
-$("#forward").addEventListener("click", () => hist((h) => h.forward()));
-$("#reload").addEventListener("click", () => { try { loaderStart(active); active.loading = true; active.loader.creep = true; active.frame.frame.contentWindow.location.reload(); } catch { go(active, active.url); } });
-$("#home").addEventListener("click", () => {
-  const t = active;
+const histTab = (t, fn) => { try { fn(t.frame.frame.contentWindow.history); } catch {} };
+function reloadTab(t) { try { loaderStart(t); t.loading = true; t.loader.creep = true; t.frame.frame.contentWindow.location.reload(); } catch { go(t, t.url); } }
+function homeTab(t) {
   if (t.loader) loaderStop(t.loader);
   clearTimeout(t.blankTimer); clearTimeout(t.stallTimer);
   t.frame.frame.remove(); t.frame = null; t.url = ""; t.title = "New tab"; t.loading = false;
-  t.view.classList.remove("has-frame"); t.input.value = ""; paintChip(t); syncChrome(); saveTabs();
-});
+  t.view.classList.remove("has-frame"); t.input.value = ""; paintChip(t); if (t.onSync) t.onSync(t); syncChrome(); saveTabs();
+}
+$("#back").addEventListener("click", () => histTab(active, (h) => h.back()));
+$("#forward").addEventListener("click", () => histTab(active, (h) => h.forward()));
+$("#reload").addEventListener("click", () => reloadTab(active));
+$("#home").addEventListener("click", () => homeTab(active));
 $("#address").addEventListener("keydown", (e) => { if (e.key === "Enter") { go(active, e.target.value); e.target.blur(); } });
 $("#address").addEventListener("focus", (e) => e.target.select());
 $("#address").addEventListener("blur", () => syncChrome());
@@ -740,6 +747,8 @@ $("#clock").addEventListener("change", (e) => { settings.clock = e.target.checke
 $("#h24").addEventListener("change", (e) => { settings.h24 = e.target.checked; save(); tickClock(); });
 $("#music-on").addEventListener("change", (e) => { settings.music = e.target.checked; save(); NV.applyMusicToggle && NV.applyMusicToggle(); });
 $("#wisp-auto").addEventListener("change", (e) => { settings.wispAuto = e.target.checked; save(); });
+// the launch mode select offers all four ways to open Nex.Velo, or asking every time
+$("#launch-mode").innerHTML = [["ask", "ask me each time"], ["here", "continue on the main page"], ["blank", "about:blank"], ["blob", "blob cloak"], ["window", "window about:blank"]].map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
 $("#launch-mode").addEventListener("change", (e) => { settings.launch = e.target.value; save(); });
 $("#launch-redirect").addEventListener("change", (e) => { settings.launchRedirect = e.target.checked; save(); });
 $("#panic-on").addEventListener("change", (e) => { settings.panicOn = e.target.checked; save(); });
@@ -792,6 +801,12 @@ $("#imp-file").addEventListener("change", async (e) => {
     toast("imported. reloading…"); setTimeout(() => location.reload(), 700);
   } catch { toast("that file couldn't be read."); }
 });
+(function layoutButton() { // run the first-visit setup again from Settings
+  const reset = $("#reset"); if (!reset || $("#redo-setup")) return;
+  const b = document.createElement("button"); b.className = "btn"; b.id = "redo-setup"; b.type = "button"; b.textContent = "change layout and launch mode…";
+  b.addEventListener("click", () => (NV.runSetup ? NV.runSetup() : toast("the setup file hasn't loaded yet")));
+  reset.before(b);
+})();
 $("#reset").addEventListener("click", () => {
   if (!confirm("reset all settings, playlists and recently played on this browser?")) return;
   DATA_KEYS.forEach(LS.del); location.reload();
@@ -882,9 +897,10 @@ const NV = window.NV = {
   activeWisp: () => activeWisp, loaded: {}, rawFetch: _fetch, apiBase: () => API || location.origin,
   syncChrome: () => syncChrome(), routeTo: (a) => routeAlias(a), panic: panicHandler,
   repairProxy: () => repairProxy(true),
+  newTab, closeTab, select, go, hist: histTab, reloadTab, homeTab, displayUrl, panicDest, wallSrcNow, desktopMode: false,
 };
 // Entertainment and Tools live in their own files. They are loaded from here so index.html doesn't need to change.
-for (const f of ["entertainment.js", "tools.js"]) {
+for (const f of ["entertainment.js", "tools.js", "setup.js"]) {
   const s = document.createElement("script"); s.src = "/" + f; s.onerror = () => showBanner("couldn't load " + f + ". upload it to the public folder and refresh.");
   document.head.appendChild(s);
 }
@@ -892,27 +908,22 @@ applyTheme(); applyWall();
 $("#ver").textContent = "v" + VERSION;
 $("#logo").addEventListener("click", () => newTab());
 
-restoring = true;
-let saved = null; try { saved = JSON.parse(LS.get("nexvelo.tabs", "null")); } catch {}
-if (saved && saved.t && saved.t.length) {
-  saved.t.forEach((x) => { if (x.k === "movies") x.k = "entertainment"; if (x.k === "web" || PAGES[x.k]) if (!(PAGES[x.k] && tabs.some((t) => t.kind === x.k))) newTab({ kind: x.k, url: x.u, lazy: true }); });
+function bootTabs() {
+  restoring = true;
+  let saved = null; try { saved = JSON.parse(LS.get("nexvelo.tabs", "null")); } catch {}
+  if (saved && saved.t && saved.t.length) {
+    saved.t.forEach((x) => { if (x.k === "movies") x.k = "entertainment"; if (x.k === "web" || PAGES[x.k]) if (!(PAGES[x.k] && tabs.some((t) => t.kind === x.k))) newTab({ kind: x.k, url: x.u, lazy: true }); });
+  }
+  restoring = false;
+  if (!tabs.length) newTab(); else select(tabs[Math.min(Math.max(saved.a, 0), tabs.length - 1)] || tabs[0]);
 }
-restoring = false;
-if (!tabs.length) newTab(); else select(tabs[Math.min(Math.max(saved.a, 0), tabs.length - 1)] || tabs[0]);
-
-/* ================= Launch choice: about:blank (recommended) or this page ================= */
-function openBlank() {
-  const w = window.open("about:blank", "_blank");
-  if (!w) { toast("allow pop-ups for this site, then try again"); return false; }
-  const d = w.document;
-  d.title = "Nex.Velo";
-  d.head.innerHTML = "<style>html,body{margin:0;height:100%;background:#000}iframe{border:0;width:100%;height:100%;display:block}</style>";
-  const f = d.createElement("iframe");
-  f.src = location.href.split("#")[0];
-  f.allow = "fullscreen; autoplay; microphone; camera; display-capture; clipboard-read; clipboard-write";
-  d.body.appendChild(f);
-  return true;
-}
+// Desktop mode (chosen in the setup) loads its own file. Everything opens in windows there instead of tabs.
+if (settings.mode === "desktop") {
+  const d = document.createElement("script"); d.src = "/desktop.js";
+  d.onload = () => NV.desktopStart();
+  d.onerror = () => { showBanner("couldn't load desktop.js. upload it to the public folder. the normal layout is shown for now."); bootTabs(); };
+  document.head.appendChild(d);
+} else bootTabs();
 
 apiReady.then(renderMarks);
 
@@ -952,22 +963,6 @@ async function checkUpdate() {
 setTimeout(checkUpdate, 20000);
 setInterval(checkUpdate, 5 * 60 * 1000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) checkUpdate(); });
+document.addEventListener("change", (e) => { if (/^(music|games|movies|ai|tools)-on$/.test(e.target.id) && NV.onSettingsApps) NV.onSettingsApps(); }); // the desktop dock follows the app switches
 
-(function launchChoice() {
-  if (window.top !== window.self || settings.launch === "here") return; // already wrapped, or the user chose "here"
-  const box = $("#launch");
-  $("#l-here").hidden = settings.launch === "blank";
-  $("#l-remember-row").hidden = settings.launch === "blank";
-  box.hidden = false;
-  $("#l-blank").addEventListener("click", () => {
-    if (!openBlank()) return;
-    if ($("#l-remember").checked) { settings.launch = "blank"; save(); }
-    box.hidden = true;
-    if (settings.launchRedirect) location.replace(panicDest()); // this tab jumps to the escape page
-  });
-  $("#l-here").addEventListener("click", () => {
-    if ($("#l-remember").checked) { settings.launch = "here"; save(); }
-    box.hidden = true;
-  });
-})();
 })();
