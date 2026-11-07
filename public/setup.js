@@ -17,8 +17,8 @@
 
   const style = document.createElement("style");
   style.textContent = `
-#su,#lg{position:fixed;inset:0;z-index:200000;display:grid;place-items:center;padding:1rem;overflow:auto;background:color-mix(in srgb,var(--bg) 78%,transparent);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);color:var(--fg);font-family:var(--font,system-ui,sans-serif)}
-.su-card{width:min(44rem,100%);display:flex;flex-direction:column;gap:1.125rem;padding:1.5rem;border-radius:1.25rem;background:var(--panel);box-shadow:0 0 0 1px color-mix(in srgb,var(--fg) 12%,transparent),0 24px 64px rgba(0,0,0,.4);animation:su-in .28s cubic-bezier(.3,.9,.3,1) both}
+#su,#lg{position:fixed;inset:0;z-index:200000;display:flex;padding:1rem;overflow:auto;background:color-mix(in srgb,var(--bg) 78%,transparent);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);color:var(--fg);font-family:var(--font,system-ui,sans-serif)}
+.su-card{margin:auto;width:min(44rem,100%);display:flex;flex-direction:column;gap:1.125rem;padding:1.5rem;border-radius:1.25rem;background:var(--panel);box-shadow:0 0 0 1px color-mix(in srgb,var(--fg) 12%,transparent),0 24px 64px rgba(0,0,0,.4);animation:su-in .28s cubic-bezier(.3,.9,.3,1) both}
 @keyframes su-in{from{opacity:0;transform:translateY(8px) scale(.98)}}
 .su-card h1{margin:0;font-size:1.375rem;font-weight:500;letter-spacing:-.01em}
 .su-card h2{margin:.25rem 0 0;font-size:.8125rem;font-weight:500;color:var(--dim)}
@@ -45,10 +45,18 @@
 .su-row .dot{flex:none;width:1rem;height:1rem;margin-top:.125rem;border-radius:50%;box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--fg) 40%,transparent)}
 .su-row.on .dot{background:radial-gradient(circle,var(--accent) 0 45%,transparent 50%);box-shadow:inset 0 0 0 2px var(--accent)}
 .su-row b{display:block;font-weight:500;font-size:.875rem}.su-row small{display:block;color:var(--dim);font-size:.75rem;line-height:1.4;margin-top:.125rem}
+.su-themes{display:grid;grid-template-columns:repeat(auto-fill,minmax(6.25rem,1fr));gap:.5rem}
+.su-th{display:flex;align-items:center;gap:.5rem;padding:.5rem .625rem;border:0;border-radius:.75rem;background:var(--btn,rgba(128,128,128,.16));color:inherit;font:inherit;font-size:.75rem;text-align:left;box-shadow:inset 0 0 0 2px transparent;transition:box-shadow .15s,transform .15s}
+.su-th i{flex:none;width:1.25rem;height:1.25rem;border-radius:50%;background:var(--c);box-shadow:inset 0 0 0 1px rgba(128,128,128,.4)}
+.su-th:hover{background:var(--btn-h,rgba(128,128,128,.24))}.su-th:active{transform:scale(.97)}.su-th.on{box-shadow:inset 0 0 0 2px var(--accent)}
+.su-fonts{display:grid;grid-template-columns:repeat(auto-fill,minmax(9rem,1fr));gap:.5rem}
+.su-fn{display:flex;flex-direction:column;gap:.125rem;padding:.5rem .75rem;border:0;border-radius:.75rem;background:var(--btn,rgba(128,128,128,.16));color:inherit;text-align:left;box-shadow:inset 0 0 0 2px transparent;transition:box-shadow .15s,transform .15s}
+.su-fn b{font-size:1.25rem;font-weight:400;line-height:1.2}.su-fn small{font-family:var(--font,system-ui);color:var(--dim);font-size:.6875rem}
+.su-fn:hover{background:var(--btn-h,rgba(128,128,128,.24))}.su-fn:active{transform:scale(.97)}.su-fn.on{box-shadow:inset 0 0 0 2px var(--accent)}
 .su-chk{display:flex;align-items:center;gap:.625rem;font-size:.8125rem;color:var(--dim)}
 .su-end{display:flex;gap:.5rem;justify-content:flex-end;flex-wrap:wrap}
 .su-end .btn{min-width:7rem}
-@media (prefers-reduced-motion:reduce){.su-card{animation:none}.su-opt,.su-row{transition:none}}
+@media (prefers-reduced-motion:reduce){.su-card{animation:none}.su-opt,.su-row,.su-th,.su-fn{transition:none}}
 `;
   document.head.appendChild(style);
 
@@ -89,15 +97,22 @@
     if ($("#su")) return;
     let mode = settings.mode === "desktop" ? "desktop" : "normal";
     let method = ["here", "blank", "blob", "window"].includes(settings.launch) ? settings.launch : "here";
-    const was = { mode };
+    const was = { mode, theme: settings.theme, font: settings.font };
+    let theme = settings.theme, font = settings.font || (settings.theme === "custom" && NV.FONTS[settings.custom.font] ? settings.custom.font : "jetbrains");
+    const themes = (NV.THEMES || []).filter((t) => t[0] !== "custom"), fonts = Object.entries(NV.FONTS || {});
+    fonts.forEach(([k]) => NV.loadFont && NV.loadFont(k)); // so every font can be previewed in its own typeface
     const box = document.createElement("div"); box.id = "su"; box.setAttribute("role", "dialog"); box.setAttribute("aria-modal", "true"); box.setAttribute("aria-label", "Set up Nex.Velo");
     box.innerHTML = `<div class="su-card">
-<div><h1>${isFirst ? "welcome to Nex.Velo" : "layout and launch mode"}</h1><p>choose how you want it to look and how it should open. you can change both later in Settings.</p></div>
+<div><h1>${isFirst ? "welcome to Nex.Velo" : "layout and launch mode"}</h1><p>choose a layout, colours and font, and how it should open. you can change all of it later in Settings.</p></div>
 <h2>layout</h2>
 <div class="su-grid">
  <button class="su-opt" data-mode="desktop" type="button"><div class="su-pv"><i class="mb"></i><i class="win"></i><i class="dock"></i></div><b>desktop</b><small>an Apple-style desktop. every app opens in its own window that you can drag, resize and minimise, with a dock along the bottom and a menu bar with the time, wifi and battery.</small></button>
  <button class="su-opt" data-mode="normal" type="button"><div class="su-pv"><i class="tabs"></i><i class="bar"></i><i class="clock">12:00</i></div><b>normal</b><small>the layout you know: tabs along the top, a search bar, and one page at a time.</small></button>
 </div>
+<h2>colour theme</h2>
+<div class="su-themes">${themes.map(([id, label, c]) => `<button class="su-th" data-t="${id}" type="button"><i style="--c:${c}"></i>${esc(label)}</button>`).join("")}</div>
+<h2>font</h2>
+<div class="su-fonts">${fonts.map(([k, f]) => `<button class="su-fn" data-f="${k}" type="button" style="font-family:${f[1].replace(/"/g, "&quot;")}"><b>Aa 123</b><small>${esc(f[0])}</small></button>`).join("")}</div>
 <h2>how should Nex.Velo open?</h2>
 <div class="su-list">${METHODS.map(([id, name, desc]) => `<button class="su-row" data-m="${id}" type="button"><span class="dot"></span><span><b>${esc(name)}</b><small>${esc(desc)}</small></span></button>`).join("")}</div>
 <label class="su-chk" id="su-redir-row"><input type="checkbox" id="su-redir"><span>after it opens, send this tab to <b>${esc(host(dest()))}</b></span></label>
@@ -107,18 +122,22 @@
     const paint = () => {
       box.querySelectorAll("[data-mode]").forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
       box.querySelectorAll("[data-m]").forEach((b) => b.classList.toggle("on", b.dataset.m === method));
+      box.querySelectorAll("[data-t]").forEach((b) => b.classList.toggle("on", b.dataset.t === theme));
+      box.querySelectorAll("[data-f]").forEach((b) => b.classList.toggle("on", b.dataset.f === font));
       $("#su-redir-row").style.display = method === "here" ? "none" : "";
     };
     paint();
     box.addEventListener("click", (e) => {
-      const a = e.target.closest("[data-mode]"), b = e.target.closest("[data-m]");
+      const a = e.target.closest("[data-mode]"), b = e.target.closest("[data-m]"), t = e.target.closest("[data-t]"), f = e.target.closest("[data-f]");
       if (a) { mode = a.dataset.mode; paint(); } else if (b) { method = b.dataset.m; paint(); }
+      else if (t) { theme = t.dataset.t; settings.theme = theme; NV.applyTheme(true); paint(); } // the whole site changes behind this screen, so you can see it
+      else if (f) { font = f.dataset.f; settings.font = font; NV.applyTheme(); paint(); }
     });
-    const cancel = $("#su-cancel"); if (cancel) cancel.addEventListener("click", () => box.remove());
+    const cancel = $("#su-cancel"); if (cancel) cancel.addEventListener("click", () => { settings.theme = was.theme; settings.font = was.font; NV.applyTheme(true); box.remove(); });
     $("#su-go").addEventListener("click", () => {
       const redirect = $("#su-redir").checked;
       if (method !== "here" && !(window.top !== window.self) && !openCloak(method)) return; // the browser blocked the new tab or window: stay on the setup so it can be tried again
-      settings.mode = mode; settings.launch = method; settings.launchRedirect = redirect; NV.save(); LS.set("nexvelo.setup", "1");
+      settings.mode = mode; settings.launch = method; settings.launchRedirect = redirect; settings.theme = theme; settings.font = font; NV.save(); LS.set("nexvelo.setup", "1");
       box.remove();
       if (method !== "here" && redirect && window.top === window.self) { location.replace(dest()); return; }
       if (mode !== was.mode) location.reload(); // the layout is chosen when the site starts
