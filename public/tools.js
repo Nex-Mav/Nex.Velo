@@ -496,4 +496,4 @@ textarea.tl-ta:focus,.tl-in:focus{box-shadow:0 0 0 2px var(--focus)}
   NV.onToolsOpen = () => {};
   paintGrid();
   NV.loaded.tools = true;
-})();
+})(); 
