@@ -22,19 +22,19 @@
 
   /* ---------- the styles ---------- */
   const MODES = {
-    aurora: { // soft glowing blobs that drift and lean toward the pointer
+    aurora: { // soft glowing blobs that drift, and slide along with the pointer (each at its own depth)
       q: 0.4,
-      init() { S.blobs = Array.from({ length: 7 }, (_, i) => ({ x: rand(0, W), y: rand(0, H), vx: rand(-14, 14), vy: rand(-14, 14), r: rand(0.28, 0.5) * Math.max(W, H), c: pal[i % pal.length], ph: rand(0, 6.28) })); },
+      init() { S.blobs = Array.from({ length: 7 }, (_, i) => ({ bx: rand(0, W), by: rand(0, H), vx: rand(-14, 14), vy: rand(-14, 14), r: rand(0.26, 0.46) * Math.max(W, H), c: pal[i % pal.length], ph: rand(0, 6.28), depth: rand(0.15, 0.75) })); },
       frame(dt) {
-        ctx.globalCompositeOperation = "source-over"; ctx.fillStyle = "#0a0716"; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = "lighter";
+        ctx.globalCompositeOperation = "source-over"; ctx.fillStyle = "#0a0716"; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = "screen";
         for (const b of S.blobs) {
-          b.x += (b.vx + Math.sin(T * 0.3 + b.ph) * 10) * dt; b.y += (b.vy + Math.cos(T * 0.26 + b.ph) * 10) * dt;
-          if (M.has) { b.x += (M.x - b.x) * 0.25 * dt; b.y += (M.y - b.y) * 0.25 * dt; }
-          if (b.x < -b.r * 0.3 || b.x > W + b.r * 0.3) b.vx *= -1; if (b.y < -b.r * 0.3 || b.y > H + b.r * 0.3) b.vy *= -1;
-          const near = M.has ? Math.max(0, 1 - Math.hypot(M.x - b.x, M.y - b.y) / (b.r * 1.2)) : 0, g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r);
-          g.addColorStop(0, rgba(b.c, 0.5 + near * 0.35)); g.addColorStop(1, rgba(b.c, 0)); ctx.fillStyle = g; ctx.fillRect(b.x - b.r, b.y - b.r, b.r * 2, b.r * 2);
+          b.bx += (b.vx + Math.sin(T * 0.3 + b.ph) * 10) * dt; b.by += (b.vy + Math.cos(T * 0.26 + b.ph) * 10) * dt;
+          if (b.bx < -b.r * 0.2 || b.bx > W + b.r * 0.2) b.vx *= -1; if (b.by < -b.r * 0.2 || b.by > H + b.r * 0.2) b.vy *= -1;
+          b.x = b.bx + (M.has ? (M.x - W / 2) * b.depth * 0.55 : 0); b.y = b.by + (M.has ? (M.y - H / 2) * b.depth * 0.55 : 0);
+          const near = M.has ? Math.max(0, 1 - Math.hypot(M.x - b.x, M.y - b.y) / (b.r * 1.1)) : 0, g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r);
+          g.addColorStop(0, rgba(b.c, 0.4 + near * 0.22)); g.addColorStop(1, rgba(b.c, 0)); ctx.fillStyle = g; ctx.fillRect(b.x - b.r, b.y - b.r, b.r * 2, b.r * 2);
         }
-        if (M.has) { const r = Math.max(W, H) * 0.22, g = ctx.createRadialGradient(M.x, M.y, 0, M.x, M.y, r); g.addColorStop(0, "rgba(255,255,255,.28)"); g.addColorStop(1, "rgba(255,255,255,0)"); ctx.fillStyle = g; ctx.fillRect(M.x - r, M.y - r, r * 2, r * 2); }
+        if (M.has) { const r = Math.max(W, H) * 0.16, g = ctx.createRadialGradient(M.x, M.y, 0, M.x, M.y, r); g.addColorStop(0, "rgba(255,255,255,.2)"); g.addColorStop(1, "rgba(255,255,255,0)"); ctx.fillStyle = g; ctx.fillRect(M.x - r, M.y - r, r * 2, r * 2); }
       },
     },
     flow: { // a smooth sweep through black, deep colour and white, tilted by the pointer
@@ -66,7 +66,7 @@
         for (let i = 0; i < S.p.length; i++) {
           const a = S.p[i];
           for (let j = i + 1; j < S.p.length; j++) { const b = S.p[j], d = Math.hypot(a.x - b.x, a.y - b.y); if (d < link) { ctx.strokeStyle = rgba(a.c, (1 - d / link) * 0.45); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); } }
-          if (M.has) { const d = Math.hypot(a.x - M.x, a.y - M.y); if (d < link * 1.6) { ctx.strokeStyle = rgba("#ffffff", (1 - d / (link * 1.6)) * 0.5); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(M.x, M.y); ctx.stroke(); } }
+          if (M.has) { const d = Math.hypot(a.x - M.x, a.y - M.y); if (d < link * 1.6) { ctx.lineWidth = 1.4; ctx.strokeStyle = rgba("#ffffff", (1 - d / (link * 1.6)) * 0.85); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(M.x, M.y); ctx.stroke(); ctx.lineWidth = 1; } }
           ctx.fillStyle = rgba(a.c, 0.95); ctx.beginPath(); ctx.arc(a.x, a.y, a.r * Q, 0, 6.283); ctx.fill();
         }
       },
