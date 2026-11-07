@@ -25,6 +25,15 @@
 .ent-pane>.gpage{padding:0;flex:1;min-height:0}
 .ent-pane .ghead{margin-bottom:.75rem}
 .ent-reader{position:relative;height:min(72vh,46rem);border-radius:.875rem;overflow:hidden;background:var(--card)}
+.ent-load{position:absolute;inset:0;z-index:2;display:grid;place-items:center;align-content:center;gap:.25rem;padding:1.5rem;text-align:center;color:var(--dim);background:var(--card);font-size:.875rem}
+.ent-bar{display:flex;align-items:center;gap:.375rem;flex-wrap:wrap;margin-bottom:.625rem}
+.ent-bar .btn{height:2rem;padding:0 .75rem}
+.ent-bar select{height:2rem;max-width:14rem;padding:0 .5rem;background:var(--btn);color:var(--fg);border:0;border-radius:.625rem;font-size:.75rem}
+.ent-bar .sp{flex:1}.ent-bar small{color:var(--dim);font-variant-numeric:tabular-nums;min-width:2.5rem;text-align:right}
+.ent-text{position:relative;height:min(72vh,46rem);overflow:auto;padding:1.75rem 1.25rem 3rem;border-radius:.875rem;background:var(--card);-webkit-user-select:text;user-select:text}
+.ent-page{max-width:40rem;margin:0 auto;font-size:var(--s,18px);line-height:1.75;font-family:var(--bf,inherit)}
+.ent-page p{margin:0 0 1em;text-align:left;hyphens:auto}
+.ent-page h3{margin:2.25em 0 1em;text-align:center;font-weight:500;font-size:1.0625em;letter-spacing:.02em}
 .ent-reader iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff}
 .ent-dl{display:flex;gap:.5rem;flex-wrap:wrap}
 .ent-dl a{display:inline-flex;align-items:center;text-decoration:none;color:inherit}
@@ -54,7 +63,9 @@
   <div id="bk-view" class="gbrowse" hidden>
     <div class="ghead"><button class="btn" id="bk-back" style="display:inline-flex;align-items:center;gap:.375rem">${BACK.replace("<svg", '<svg style="width:1rem;height:1rem;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"')}all books</button><b id="bk-title" style="flex:1;min-width:6rem"></b><button class="btn" id="bk-open">open in its own tab</button></div>
     <div class="mvdetail"><div class="mvside"><img id="bk-cover" alt=""><div class="mvmeta" id="bk-meta"></div><div class="ent-dl" id="bk-dl"></div></div>
-    <div class="mvmain"><div class="ent-reader" id="bk-reader"></div><div class="msg" id="bk-rmsg"></div></div></div>
+    <div class="mvmain">
+      <div class="ent-bar" id="bk-bar" hidden><button class="btn" id="bk-sm" aria-label="Smaller text">A−</button><button class="btn" id="bk-lg" aria-label="Larger text">A+</button><button class="btn" id="bk-font" aria-label="Change typeface">serif</button><select id="bk-chap" aria-label="Chapters"></select><span class="sp"></span><small id="bk-pct"></small><button class="btn" id="bk-mode">original page</button></div>
+      <div class="ent-text" id="bk-text" hidden></div><div class="ent-reader" id="bk-reader" hidden></div><div class="msg" id="bk-rmsg"></div></div></div>
   </div>
 </div>
 <div class="ent-pane" id="ent-ab" hidden>
@@ -156,24 +167,85 @@
   }
 
   /* ---------- books ---------- */
+  // Project Gutenberg books open in a built-in reader (the server sends the clean text, so it is quick and works anywhere).
+  // "original page" shows the book's own web page through the proxy instead. Other books always use the proxy.
   const books = (() => {
-    let it = null, token = 0;
+    let it = null, token = 0, mode = "simple", loadedId = "", saveT = 0, proxiedId = "";
     const b = browser("bk", "/api/ent/books", openBook);
+    const prefs = (() => { try { return { size: 18, serif: true, ...JSON.parse(LS.get("nexvelo.bk.prefs", "{}")) }; } catch { return { size: 18, serif: true }; } })();
+    const isPg = () => !!it && /^pg\d+$/.test(it.id);
+    const posKey = () => "nexvelo.bk." + it.id;
+    function applyPrefs() {
+      const t = $("#bk-text"); t.style.setProperty("--s", prefs.size + "px"); t.style.setProperty("--bf", prefs.serif ? 'Georgia,"Times New Roman",serif' : "inherit");
+      $("#bk-font").textContent = prefs.serif ? "serif" : "sans"; LS.set("nexvelo.bk.prefs", JSON.stringify(prefs));
+    }
+    function showMode(m) {
+      mode = m;
+      $("#bk-text").hidden = m !== "simple"; $("#bk-reader").hidden = m !== "original";
+      $("#bk-bar").hidden = !isPg();
+      for (const id of ["bk-sm", "bk-lg", "bk-font", "bk-chap", "bk-pct"]) $("#" + id).hidden = m !== "simple";
+      $("#bk-mode").textContent = m === "simple" ? "original page" : "simple reader";
+    }
+    const pct = () => { const t = $("#bk-text"), r = t.scrollHeight - t.clientHeight; $("#bk-pct").textContent = r > 0 ? Math.round((t.scrollTop / r) * 100) + "%" : ""; };
+    const savePos = () => { const t = $("#bk-text"), r = t.scrollHeight - t.clientHeight; if (it && loadedId === it.id && r > 0) LS.set(posKey(), String(t.scrollTop / r)); };
+
+    async function loadSimple(my) {
+      const msg = $("#bk-rmsg"); msg.textContent = "loading the text…";
+      try {
+        const d = await get("/api/ent/book?id=" + encodeURIComponent(it.id));
+        if (my !== token) return;
+        const host = $("#bk-text"); host.innerHTML = '<div class="ent-page"></div>'; const page = host.firstChild;
+        const paras = String(d.text || "").split("\n\n"), heads = new Map((d.heads || []).map((h) => [h.i, h]));
+        $("#bk-chap").innerHTML = '<option value="">chapters</option>' + (d.heads || []).slice(0, 300).map((h) => `<option value="${h.i}">${esc(h.t.slice(0, 48))}</option>`).join("");
+        $("#bk-chap").style.display = (d.heads || []).length ? "" : "none";
+        let i = 0; // drawn in small batches, so a long book never freezes the page
+        const step = () => {
+          if (my !== token) return;
+          let html = ""; for (const end = Math.min(paras.length, i + 200); i < end; i++) html += heads.has(i) ? `<h3 data-i="${i}">${esc(paras[i])}</h3>` : `<p>${esc(paras[i])}</p>`;
+          page.insertAdjacentHTML("beforeend", html);
+          if (i < paras.length) setTimeout(step, 0);
+          else { loadedId = it.id; msg.textContent = ""; const saved = parseFloat(LS.get(posKey(), "0")) || 0; host.scrollTop = saved * (host.scrollHeight - host.clientHeight); pct(); }
+        };
+        step();
+      } catch (e) {
+        if (my !== token) return;
+        msg.textContent = "couldn't load the text (" + e.message + "). showing the original page instead.";
+        showMode("original"); loadProxied(my);
+      }
+    }
+    async function loadProxied(my) {
+      if (proxiedId === it.id) return;
+      proxiedId = it.id;
+      const holder = $("#bk-reader"); holder.innerHTML = '<div class="ent-load" id="bk-load"><span>opening the book through the proxy…</span><small>big books can take a minute</small></div>';
+      let f; try { f = await NV.proxyFrame(it.read); } catch { f = document.createElement("iframe"); f.src = it.read; } // through the proxy first, so it works where the site is blocked
+      if (my !== token) return;
+      holder.appendChild(f);
+      f.addEventListener("load", () => { const l = $("#bk-load"); if (l) l.remove(); });
+      setTimeout(() => { const l = $("#bk-load"); if (l && my === token) l.innerHTML = "<span>still loading…</span><small>you can also press “open in its own tab”.</small>"; }, 25000);
+    }
     async function openBook(item) {
-      it = item; const my = ++token;
+      it = item; const my = ++token; loadedId = ""; proxiedId = "";
       $("#bk-browse").hidden = true; $("#bk-view").hidden = false;
       $("#bk-title").textContent = item.title;
       $("#bk-cover").src = img(item.cover); $("#bk-cover").style.visibility = item.cover ? "visible" : "hidden";
       $("#bk-meta").textContent = [item.author, item.year, (item.subjects || []).join(", ")].filter(Boolean).join(" · ");
       $("#bk-dl").innerHTML = (item.downloads || []).map((d) => `<a class="btn" href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.label)}</a>`).join("");
-      const holder = $("#bk-reader"); holder.innerHTML = ""; $("#bk-rmsg").textContent = "opening the book…";
-      let f; try { f = await NV.proxyFrame(item.read); } catch { f = document.createElement("iframe"); f.src = item.read; } // through the proxy first, so it works where the site is blocked
-      if (my !== token) return;
-      holder.appendChild(f); $("#bk-rmsg").textContent = "";
+      $("#bk-text").innerHTML = ""; $("#bk-reader").innerHTML = ""; $("#bk-rmsg").textContent = ""; $("#bk-chap").innerHTML = ""; $("#bk-pct").textContent = "";
+      applyPrefs();
+      if (isPg()) { showMode("simple"); loadSimple(my); } else { showMode("original"); $("#bk-bar").hidden = true; loadProxied(my); }
     }
-    const close = () => { ++token; it = null; $("#bk-reader").innerHTML = ""; $("#bk-view").hidden = true; $("#bk-browse").hidden = false; };
+    const close = () => { savePos(); ++token; it = null; loadedId = ""; proxiedId = ""; $("#bk-text").innerHTML = ""; $("#bk-reader").innerHTML = ""; $("#bk-view").hidden = true; $("#bk-browse").hidden = false; };
     $("#bk-back").addEventListener("click", close);
     $("#bk-open").addEventListener("click", () => { if (it) NV.openUrl(it.read); });
+    $("#bk-sm").addEventListener("click", () => { prefs.size = Math.max(13, prefs.size - 1); applyPrefs(); });
+    $("#bk-lg").addEventListener("click", () => { prefs.size = Math.min(30, prefs.size + 1); applyPrefs(); });
+    $("#bk-font").addEventListener("click", () => { prefs.serif = !prefs.serif; applyPrefs(); });
+    $("#bk-chap").addEventListener("change", (e) => { const h = $("#bk-text").querySelector('h3[data-i="' + e.target.value + '"]'); if (h) $("#bk-text").scrollTo({ top: h.offsetTop - 12, behavior: "smooth" }); e.target.value = ""; });
+    $("#bk-text").addEventListener("scroll", () => { pct(); clearTimeout(saveT); saveT = setTimeout(savePos, 700); });
+    $("#bk-mode").addEventListener("click", () => {
+      if (!it) return; const my = token;
+      if (mode === "simple") { showMode("original"); loadProxied(my); } else { showMode("simple"); if (loadedId !== it.id) loadSimple(my); }
+    });
     return { open: b.open };
   })();
 
