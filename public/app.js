@@ -1,968 +1,212 @@
-(() => {
-"use strict";
+// Books and audiobooks for the Entertainment app. Only free, legal sources are used:
+//   - Project Gutenberg (through the free Gutendex search) and Open Library: public-domain books that can be read right here.
+//   - LibriVox on the Internet Archive: free audiobooks read by volunteers (public-domain books).
+// This file is optional. If it is missing from the server, only books and audiobooks say so. Everything else keeps running.
 
-const $ = (s, r = document) => r.querySelector(s);
-const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
-const LS = {
-  get: (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch { return d; } },
-  set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
-  del: (k) => { try { localStorage.removeItem(k); } catch {} },
-};
-const VERSION = "1.00.0";
+import { Readable } from "node:stream";
 
-// small icons of our own (used instead of text symbols)
-const ICON_X = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
-const ICON_EDIT = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4-1 11-11-3-3L5 16z"/></svg>';
+export function registerLibrary(app, { withTimeout, UA, cached }) {
+  const AR = "https://archive.org";
+  const one = (v) => (Array.isArray(v) ? v[0] : v);
+  const clean = (t) => String(one(t) || "").replace(/<[^>]+>/g, " ").replace(/&[a-z#0-9]+;/gi, " ").replace(/\s+/g, " ").trim();
+  const fail = (reply, e, code = 502) => { reply.code(code); return { error: String(e?.message || e) }; };
+  const pageNo = (v) => Math.max(1, Math.min(50, parseInt(v, 10) || 1));
 
-// The API (AI, music, lyrics...) lives on the Nex.Velo server. Ask this host first, then the Railway server.
-const _fetch = window.fetch.bind(window);
-let API = "";
-const apiReady = (async () => {
-  if (/\.railway\.app$/i.test(location.hostname) || /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) return;
-  const probe = async (base) => {
-    try {
-      const c = new AbortController(), t = setTimeout(() => c.abort(), 3500);
-      const r = await _fetch(base + "/api/ai/status", { signal: c.signal }); clearTimeout(t);
-      return r.ok && !!(await r.json());
-    } catch { return false; }
-  };
-  for (const base of ["", "https://nex-velo.up.railway.app"]) if (await probe(base)) { API = base; return; }
-  API = "https://nex-velo.up.railway.app"; // nothing answered: keep the default so the errors point at the right place
-})();
-window.fetch = (u, o) => (typeof u === "string" && u.startsWith("/api/") ? apiReady.then(() => _fetch(API + u, o)) : _fetch(u, o));
-
-/* ================= Settings ================= */
-const defaultWisp = "wss://nex-velo.up.railway.app/wisp/"; // the Nex.Velo server, always available as the default
-const settings = {
-  wisp: defaultWisp, engine: "https://duckduckgo.com/?q=%s", adblock: true,
-  theme: "black", wall: "none", wallUrl: "", blur: true, blurAmt: 14,
-  clock: true, h24: true, music: true, games: true, movies: true, tools: true, ai: true, name: "",
-  launch: "ask", launchRedirect: true, wispAuto: true, mode: "normal",
-  custom: { bg: "#14161a", fg: "#f2f2f2", accent: "#8ab4ff", clock: "", bar: "", font: "jetbrains", size: 100 },
-  panicOn: true, panicKey: "F9", panicSite: "classroom", panicUrl: "", panicMode: "replace",
-};
-try { Object.assign(settings, JSON.parse(LS.get("nexvelo.settings", "{}"))); } catch {}
-if (LS.get("nexvelo.settings") == null) { // carry over values saved by the first version
-  const w = LS.get("nexus.wisp"), e = LS.get("nexus.engine"), a = LS.get("nexus.adblock");
-  if (w) settings.wisp = w;
-  if (e) settings.engine = e;
-  if (a != null) settings.adblock = a === "1";
-}
-const PANIC_SITES = {
-  classroom: "https://classroom.google.com", docs: "https://docs.google.com", drive: "https://drive.google.com", gmail: "https://mail.google.com",
-  canvas: "https://canvas.instructure.com", schoology: "https://app.schoology.com", khan: "https://www.khanacademy.org",
-  desmos: "https://www.desmos.com/calculator", wikipedia: "https://www.wikipedia.org", google: "https://www.google.com",
-};
-{ // an address saved by the earlier version stays as "my own address"
-  let saved = {}; try { saved = JSON.parse(LS.get("nexvelo.settings", "{}")); } catch {}
-  if (!saved.panicSite && saved.panicUrl && !Object.values(PANIC_SITES).includes(saved.panicUrl)) settings.panicSite = "custom";
-  else if (!saved.panicSite && saved.panicUrl) settings.panicSite = Object.keys(PANIC_SITES).find((k) => PANIC_SITES[k] === saved.panicUrl) || "classroom";
-}
-const panicDest = () => (settings.panicSite === "custom" ? settings.panicUrl : PANIC_SITES[settings.panicSite]) || PANIC_SITES.classroom;
-const save = () => LS.set("nexvelo.settings", JSON.stringify(settings));
-
-/* ================= Banner (shows what is wrong instead of a blank page) ================= */
-// With repair set, the banner also gets a "repair" button that resets the proxy (see "Proxy self-repair" below).
-function showBanner(msg, repair) {
-  const b = $("#banner"); if (!b) return;
-  b.innerHTML = `<span>${esc(msg)}</span>${repair ? '<button type="button" data-repair style="width:auto;padding:0 .625rem;border-radius:.75rem;font-size:.75rem">repair</button>' : ""}<button type="button" data-x aria-label="Dismiss">${ICON_X}</button>`;
-  b.hidden = false;
-  $("[data-x]", b).onclick = () => { b.hidden = true; };
-  const r = $("[data-repair]", b); if (r) r.onclick = () => repairProxy(true);
-}
-addEventListener("error", (e) => { // a script that couldn't be loaded at all (missing file)
-  const t = e.target; if (t && t.tagName === "SCRIPT") showBanner("couldn't load " + (t.getAttribute("src") || "a file").split("?")[0] + ". upload it to the public folder and refresh.");
-}, true);
-
-/* ================= Toast + spring ================= */
-let toastTimer;
-function toast(msg) {
-  const t = $("#toast");
-  t.textContent = msg; t.classList.add("on");
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("on"), 3200);
-}
-// Critically damped by default (no overshoot). Starts from the live value, so it can be interrupted.
-function spring({ from, to, velocity = 0, response = .35, damping = 1 }, onUpdate, onDone) {
-  if (reduceMotion()) { onUpdate(to); onDone && onDone(); return () => {}; }
-  const k = (2 * Math.PI / response) ** 2, c = 4 * Math.PI * damping / response;
-  let x = from, v = velocity, last = performance.now(), raf, dead = false;
-  const step = (now) => {
-    if (dead) return;
-    const dt = Math.min((now - last) / 1000, 1 / 30); last = now;
-    const n = Math.max(1, Math.ceil(dt * 240));
-    for (let i = 0; i < n; i++) { const h = dt / n; v += (-k * (x - to) - c * v) * h; x += v * h; }
-    onUpdate(x);
-    if (Math.abs(x - to) < .002 && Math.abs(v) < .02) { onUpdate(to); onDone && onDone(); return; }
-    raf = requestAnimationFrame(step);
-  };
-  raf = requestAnimationFrame(step);
-  return () => { dead = true; cancelAnimationFrame(raf); };
-}
-
-/* ================= Scramjet + transport ================= */
-const { ScramjetController } = $scramjetLoadController();
-const scramjet = new ScramjetController({
-  prefix: "/scramjet/",
-  files: { wasm: "/scram/scramjet.wasm.wasm", all: "/scram/scramjet.all.js", sync: "/scram/scramjet.sync.js" },
-  codec: { encode: (u) => encodeURIComponent(u), decode: (u) => decodeURIComponent(u) },
-  flags: { captureErrors: true, strictRewrites: true, sourcemaps: true, allowInvalidJs: true, allowFailedIntercepts: true },
-});
-const connection = new BareMux.BareMuxConnection("/baremux/worker.js");
-
-let activeWisp = settings.wisp; // the server in use right now (may differ from the saved one if that one is down)
-const applyTransport = () => connection.setTransport("/libcurl/index.mjs", [{ wisp: activeWisp, websocket: activeWisp }]);
-
-async function pickWisp() {
-  if (settings.wispAuto === false) return;
-  const sameHost = (location.protocol === "https:" ? "wss" : "ws") + "://" + location.host + "/wisp/";
-  for (const u of [...new Set([settings.wisp, defaultWisp, sameHost])]) {
-    if (await testWisp(u, 4500)) {
-      if (u !== settings.wisp) { activeWisp = u; toast("your Wisp server wasn't reachable, using " + new URL(u).host + " instead"); }
-      return;
-    }
+  async function getJson(url, ms = 20000) {
+    const r = await withTimeout(fetch(url, { headers: { "user-agent": UA, accept: "application/json" }, redirect: "follow" }), ms);
+    if (!r.ok) throw new Error(new URL(url).hostname + " answered " + r.status);
+    return r.json();
   }
-  showBanner("no Wisp server could be reached, so sites won't load. open Settings → servers and add one that is running.");
-}
 
-async function pushAdblock() {
-  const reg = await navigator.serviceWorker.ready;
-  (reg.active || navigator.serviceWorker.controller)?.postMessage({ type: "adblock", enabled: settings.adblock });
-}
+  /* ================= Books ================= */
+  const firstLast = (n) => (String(n).includes(",") ? String(n).split(",").map((s) => s.trim()).reverse().join(" ") : String(n));
 
-/* ================= Proxy self-repair ================= */
-// After the site is updated, the browser can keep an old copy of the proxy (its service worker, cached files or saved setup).
-// The page then stays white until the site's data is cleared. This does that clearing automatically when a page comes up blank,
-// and the "repair" button / opening the site with ?repair at the end of the address does it on demand.
-const REPAIR_REQUESTED = /[?&]repair(=|&|$)/.test(location.search);
-
-async function repairProxy(full) {
-  try { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map((r) => r.unregister())); } catch {}
-  try { for (const k of await caches.keys()) await caches.delete(k); } catch {}
-  if (full) { // also forget Scramjet's saved setup (this signs you out of proxied sites)
-    try {
-      const dbs = indexedDB.databases ? await indexedDB.databases() : [{ name: "$scramjet" }];
-      await Promise.all(dbs.filter((d) => d.name && /scramjet/i.test(d.name)).map((d) => new Promise((res) => {
-        const q = indexedDB.deleteDatabase(d.name); q.onsuccess = q.onerror = q.onblocked = () => res(); setTimeout(res, 1500);
-      })));
-    } catch {}
+  async function gutenberg(q, page) {
+    const p = new URLSearchParams();
+    if (q) p.set("search", q);
+    if (page > 1) p.set("page", String(page));
+    const d = await getJson("https://gutendex.com/books/?" + p);
+    const items = (d.results || []).map((b) => {
+      const f = b.formats || {};
+      const find = (re) => (Object.entries(f).find(([k]) => re.test(k)) || [])[1] || "";
+      const html = find(/^text\/html/), txt = find(/^text\/plain/), epub = find(/^application\/epub/), kindle = find(/mobipocket/);
+      return {
+        source: "gutenberg", id: "pg" + b.id, title: clean(b.title).slice(0, 140),
+        author: (b.authors || []).map((a) => firstLast(a.name)).join("; ").slice(0, 100),
+        subjects: (b.subjects || []).slice(0, 3), cover: f["image/jpeg"] || "", read: html || txt,
+        downloads: [epub && { label: "epub", url: epub }, kindle && { label: "kindle", url: kindle }, txt && { label: "plain text", url: txt }].filter(Boolean),
+      };
+    }).filter((b) => b.read);
+    return { items, more: !!d.next };
   }
-  location.replace(location.pathname + location.hash);
-}
 
-// Called when something looks broken. The first time it only resets the service worker and caches. If the problem comes back
-// within half an hour, it also clears Scramjet's saved setup. It never repairs twice within two minutes (so it can't loop).
-function autoRepair(reason) {
-  let heal = {}; try { heal = JSON.parse(LS.get("nexvelo.heal", "{}")) || {}; } catch {}
-  const age = Date.now() - (heal.t || 0);
-  if (age < 2 * 60 * 1000) { showBanner("the proxy is having trouble (" + reason + "). press repair, or close other Nex.Velo tabs and reload.", true); return; }
-  const n = age < 30 * 60 * 1000 ? (heal.n || 0) + 1 : 1;
-  LS.set("nexvelo.heal", JSON.stringify({ t: Date.now(), n }));
-  toast("the proxy needs a quick repair. one moment…");
-  setTimeout(() => repairProxy(n >= 2), 700);
-}
-
-// the recovery page (sent by the service worker in place of a white screen) asks for a repair this way
-addEventListener("message", (e) => { if (e.origin === location.origin && e.data && e.data.nvRepair) autoRepair(String(e.data.nvRepair)); });
-
-// A page that finished loading but shows nothing at all is a sign of a stale proxy. Look again a few seconds after it loads.
-function watchBlank(t) {
-  clearTimeout(t.blankTimer);
-  t.blankTimer = setTimeout(() => {
-    if (!t.frame || !t.frame.frame.isConnected) return;
-    let bad = false;
-    try {
-      const w = t.frame.frame.contentWindow, d = w.document;
-      if (w.location.href === "about:blank") return;
-      const b = d.body;
-      bad = d.readyState === "complete" && (!b || (!b.querySelector("*:not(script):not(style):not(noscript)") && !(b.innerText || "").trim()));
-    } catch { return; }
-    if (bad) autoRepair("a page came up blank");
-  }, 7000);
-}
-
-const ready = (async () => {
-  if (!("serviceWorker" in navigator)) throw new Error("Service workers aren't supported in this browser.");
-  if (REPAIR_REQUESTED) { await repairProxy(true); await new Promise(() => {}); } // the page reloads itself when this is done
-  await scramjet.init(); // create Scramjet's database before the service worker starts
-  // updateViaCache "none": always look for a newer sw.js (and the files it loads) on the server, never in the browser's cache
-  await navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" });
-  await navigator.serviceWorker.ready;
-  if (!navigator.serviceWorker.controller) { // a brand-new worker takes control of this page a moment after it starts
-    await Promise.race([
-      new Promise((r) => navigator.serviceWorker.addEventListener("controllerchange", r, { once: true })),
-      new Promise((r) => setTimeout(r, 4000)),
-    ]);
-  }
-  await pickWisp();
-  await applyTransport();
-  await pushAdblock();
-})();
-ready.catch((e) => console.error("Proxy setup failed:", e));
-
-/* ================= Clock ================= */
-const greet = (h) => (h < 5 ? "good night" : h < 12 ? "good morning" : h < 18 ? "good afternoon" : h < 22 ? "good evening" : "good night");
-function tickClock() {
-  const d = new Date(), h = d.getHours();
-  const hh = settings.h24 ? String(h).padStart(2, "0") : String(h % 12 || 12).padStart(2, "0");
-  const parts = new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "long" }).formatToParts(d);
-  const g = (t) => parts.find((p) => p.type === t)?.value || "";
-  const date = `${g("weekday")} ${g("day")} ${g("month")}`.toLowerCase();
-  const hello = greet(h) + (settings.name ? `, ${settings.name.toLowerCase()}` : "");
-  $("#bar-clock").textContent = `${hh}:${String(d.getMinutes()).padStart(2, "0")}`;
-  for (const el of $$(".clock")) {
-    el.hidden = !settings.clock;
-    $(".h", el).textContent = hh;
-    $(".m", el).textContent = String(d.getMinutes()).padStart(2, "0");
-    $(".g", el).innerHTML = `<b>${esc(hello)}</b> · ${esc(date)}`;
-  }
-}
-setInterval(tickClock, 1000);
-
-/* ================= Themes + wallpapers ================= */
-const THEMES = [["black", "midnight", "#0a0a0b"], ["white", "paper", "#f6f6f4"], ["sage", "sage", "#c9dcc0"], ["lavender", "lavender", "#d4c9ec"], ["rose", "rose", "#f2c6cd"], ["sky", "sky", "#c3dcf2"], ["peach", "peach", "#f6d2b8"], ["custom", "custom", "#888"]];
-const WALLS = { none: null, forest: () => NVWalls.forest(), ocean: () => NVWalls.ocean(), sky: () => NVWalls.sky() };
-const wallCache = {};
-const wallData = () => LS.get("nexvelo.wallpaper", "");
-const wallSrc = (k) => (k === "custom" ? wallData() || settings.wallUrl : (wallCache[k] ??= WALLS[k] ? WALLS[k]() : null));
-
-/* ----- custom theme: colours, fonts, size ----- */
-const FONTS = {
-  jetbrains: ["JetBrains Mono", '"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace', "JetBrains+Mono:wght@300;400;500;700"],
-  inter: ["Inter", 'Inter,system-ui,sans-serif', "Inter:wght@300;400;500;700"],
-  poppins: ["Poppins", 'Poppins,system-ui,sans-serif', "Poppins:wght@300;400;500;700"],
-  space: ["Space Grotesk", '"Space Grotesk",system-ui,sans-serif', "Space+Grotesk:wght@300;400;500;700"],
-  dm: ["DM Sans", '"DM Sans",system-ui,sans-serif', "DM+Sans:wght@300;400;500;700"],
-  quicksand: ["Quicksand", 'Quicksand,system-ui,sans-serif', "Quicksand:wght@300;400;500;700"],
-  playfair: ["Playfair Display", '"Playfair Display",Georgia,serif', "Playfair+Display:wght@400;500;700"],
-  lora: ["Lora", 'Lora,Georgia,serif', "Lora:wght@400;500;700"],
-  system: ["System", 'system-ui,-apple-system,"Segoe UI",sans-serif', null],
-  serif: ["Georgia (serif)", 'Georgia,"Times New Roman",serif', null],
-  mono: ["Courier (mono)", '"Courier New",ui-monospace,monospace', null],
-};
-const loadedFonts = new Set(["jetbrains"]);
-function loadFont(k) {
-  const f = FONTS[k]; if (!f || !f[2] || loadedFonts.has(k)) return;
-  loadedFonts.add(k);
-  const l = document.createElement("link"); l.rel = "stylesheet"; l.href = `https://fonts.googleapis.com/css2?family=${f[2]}&display=swap`;
-  document.head.appendChild(l);
-}
-const lum = (hex) => { const n = parseInt(hex.slice(1), 16), c = [n >> 16, (n >> 8) & 255, n & 255].map((v) => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }); return .2126 * c[0] + .7152 * c[1] + .0722 * c[2]; };
-const contrastOn = (hex) => (lum(hex) > .4 ? "#101010" : "#ffffff");
-const CUSTOM_VARS = ["--bg", "--fg", "--dim", "--panel", "--card", "--accent", "--accent-fg", "--clock", "--bar", "--font", "--fs"];
-
-function applyTheme() {
-  const root = document.documentElement;
-  root.dataset.theme = settings.theme;
-  CUSTOM_VARS.forEach((v) => root.style.removeProperty(v));
-  root.style.colorScheme = "";
-  if (settings.theme !== "custom") return;
-  const c = settings.custom, set = (k, v) => root.style.setProperty(k, v);
-  set("--bg", c.bg); set("--fg", c.fg); set("--panel", c.bg);
-  set("--dim", `color-mix(in srgb, ${c.fg} 58%, transparent)`);
-  set("--card", `color-mix(in srgb, ${c.fg} 9%, ${c.bg})`);
-  set("--accent", c.accent); set("--accent-fg", contrastOn(c.accent));
-  if (c.clock) set("--clock", c.clock);
-  if (c.bar) set("--bar", c.bar);
-  const f = FONTS[c.font] || FONTS.jetbrains; loadFont(c.font); set("--font", f[1]);
-  set("--fs", c.size + "%");
-  root.style.colorScheme = lum(c.bg) > .4 ? "light" : "dark";
-}
-
-function applyWall() {
-  let src = wallSrc(settings.wall);
-  if (settings.wall === "custom" && !/^(https?:|data:image\/)/i.test(src || "")) src = null;
-  $("#wall").style.backgroundImage = src ? `url("${src.replace(/"/g, "%22")}")` : "";
-  $("#wall").style.setProperty("--blur", settings.blur ? settings.blurAmt + "px" : "0px");
-  document.body.classList.toggle("has-wall", !!src);
-  if (window.NV && NV.onWall) NV.onWall();
-}
-const wallSrcNow = () => { const src = wallSrc(settings.wall); return settings.wall === "custom" && !/^(https?:|data:image\/)/i.test(src || "") ? null : src; };
-
-/* ================= Escape key (the panic key) ================= */
-let capturing = false; // true while Settings is waiting for you to press the new key
-// Returns true when the key was the panic key and the jump happened. Games and other frames call this too.
-function panicHandler(e) {
-  if (capturing || !settings.panicOn || e.repeat || e.altKey || e.ctrlKey || e.metaKey) return false;
-  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-  if (k !== settings.panicKey) return false;
-  const t = e.target, typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
-  if (typing && settings.panicKey.length === 1) return false; // single letters would fire while typing
-  e.preventDefault(); e.stopPropagation();
-  const dest = panicDest();
-  const top = (() => { try { return window.top.location.href, window.top; } catch { return window; } })();
-  if (settings.panicMode === "new") { window.open(dest, "_blank", "noopener"); top.location.replace("about:blank"); }
-  else top.location.replace(dest);
-  return true;
-}
-addEventListener("keydown", panicHandler, true);
-
-/* ================= URL handling ================= */
-const ALIAS = /^(?:https?:\/\/)?nex\.?velo(?:\/(?:games|music|ai|settings|servers|entertainment|tools|movies)(?:\/[a-z0-9-]+)?)?\/?$/i;
-function resolve(raw) {
-  const v = raw.trim();
-  if (!v) return null;
-  if (/^nex\.?velo\//i.test(v) && !ALIAS.test(v)) return location.origin + "/" + v.replace(/^nex\.?velo\/?/i, "");
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) return v;
-  if (!/\s/.test(v) && (/^localhost(:\d+)?(\/|$)/i.test(v) || /^[^\s/]+\.[a-z]{2,}(:\d+)?(\/|$|\?|#)/i.test(v))) return "https://" + v;
-  return settings.engine.replace("%s", encodeURIComponent(v));
-}
-
-/* ================= Loader (slanted bars + percentage + rotating quote) ================= */
-const QUOTES = [
-  "Slow is smooth, smooth is fast.", "Patience.", "Good things take a moment.", "Almost there.",
-  "The best way out is always through.", "Small steps add up to big journeys.", "Breathe in, breathe out.",
-  "Every expert was once a beginner.", "Stay curious.", "Quiet minds find clear answers.",
-  "Nothing worth having arrives instantly.", "Keep going, you are closer than you think.",
-  "A little progress each day adds up to big results.", "Rest your eyes for a second.",
-  "You miss every shot you never take.", "Make it simple, then make it better.",
-  "The journey is the fun part.", "Loading greatness.", "Fortune favours the bold.",
-  "Be kind to your future self.", "Dream big, start small, begin now.", "Calm seas never made a skilled sailor.",
-  "Think different, load faster.", "Take a sip of water while you wait.", "Today is a good day to learn something new.",
-  "Courage is just fear that has said its prayers.", "Wherever you go, go with all your heart.",
-  "Light travels faster than sound, so some people look bright until they speak.",
-  "If you can dream it, you can build it.", "Hold tight, the page is on its way.",
-];
-const BARS = 24, words = (q) => q.trim().split(/\s+/).length;
-let deck = [];
-const nextQuoteText = () => { if (!deck.length) deck = [...QUOTES].sort(() => Math.random() - .5); return deck.pop(); };
-
-function ensureLoader(t) {
-  if (t.loader) return t.loader;
-  const el = document.createElement("div");
-  el.className = "loader out"; el.hidden = true;
-  el.innerHTML = `<p class="lq"></p><div class="lrow"><div class="lbars">${"<i></i>".repeat(BARS)}</div><span class="lpct">0%</span></div>`;
-  t.view.appendChild(el);
-  return (t.loader = { el, q: $(".lq", el), bars: $$("i", el), pct: $(".lpct", el), p: 0, target: 0, creep: false, raf: 0, timer: 0, on: false });
-}
-function showQuote(L) {
-  if (!L.on) return;
-  const text = nextQuoteText();
-  L.q.classList.add("fade");
-  setTimeout(() => { L.q.textContent = text; L.q.classList.remove("fade"); }, L.q.textContent ? 300 : 0);
-  L.timer = setTimeout(() => showQuote(L), words(text) * 2000); // 1 word = 2 seconds
-}
-function loaderTick(L) {
-  if (!L.on) return;
-  if (L.creep && L.target < 92) L.target += .03;
-  L.p += (L.target - L.p) * .07 + .02;
-  if (L.p > L.target) L.p = L.target;
-  const lit = Math.floor((L.p / 100) * BARS + (L.p >= 99.5 ? 1 : 0));
-  L.bars.forEach((b, i) => b.classList.toggle("on", i < lit));
-  L.pct.textContent = Math.floor(L.p) + "%";
-  if (L.target >= 100 && L.p >= 99.4) { setTimeout(() => loaderStop(L), 250); return; }
-  L.raf = requestAnimationFrame(() => loaderTick(L));
-}
-function loaderStart(t) {
-  const L = ensureLoader(t);
-  cancelAnimationFrame(L.raf); clearTimeout(L.timer);
-  Object.assign(L, { on: true, p: 0, target: 15, creep: false });
-  L.bars.forEach((b) => b.classList.remove("on")); L.q.textContent = "";
-  L.el.hidden = false; requestAnimationFrame(() => L.el.classList.remove("out"));
-  showQuote(L); loaderTick(L);
-  clearTimeout(L.guard); L.guard = setTimeout(() => loaderStop(L), 60000); // never get stuck
-}
-function loaderStop(L) {
-  if (!L || !L.on) return;
-  L.on = false; cancelAnimationFrame(L.raf); clearTimeout(L.timer); clearTimeout(L.guard);
-  L.el.classList.add("out"); setTimeout(() => { if (!L.on) L.el.hidden = true; }, 320);
-}
-
-/* ================= Tabs ================= */
-// kinds: "web" (home page or a proxied site), "settings", "games", "music", "ai"
-const tabs = [];
-let active = null, uid = 0, restoring = false;
-// Entertainment and Tools are built by entertainment.js and tools.js. Their empty pages are made here so saved tabs can come back before those files finish loading.
-const makePage = (id) => { let n = $("#" + id); if (!n) { n = document.createElement("section"); n.className = "page"; n.id = id; n.innerHTML = '<div class="msg" style="padding:2rem">loading…</div>'; $("#pages").appendChild(n); } return n; };
-const PAGES = { settings: $("#page-settings"), music: $("#page-music"), ai: $("#page-ai"), games: $("#page-games"), entertainment: makePage("page-entertainment"), tools: makePage("page-tools") };
-const X_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
-const isHome = (t) => t.kind === "web" && !t.frame;
-
-function saveTabs() {
-  if (restoring || NV.desktopMode) return; // desktop mode keeps its windows in desktop.js
-  LS.set("nexvelo.tabs", JSON.stringify({ a: tabs.indexOf(active), t: tabs.map((t) => ({ k: t.kind, u: t.frame ? t.url : t.pendingUrl || "" })) }));
-}
-
-function newTab(opts = {}) {
-  if (NV.desktopMode && !opts.host) return NV.desktopOpen(opts); // desktop mode: every tab is a window
-  const kind = opts.kind || "web";
-  if (kind !== "web" && !PAGES[kind]) { showBanner("the " + kind + " page isn't in this index.html. upload the newest index.html and clear the CDN cache."); return null; }
-  const t = { id: ++uid, kind, title: kind === "web" ? "New tab" : kind, url: "", frame: null, pendingUrl: null, loader: null };
-  t.view = document.createElement("div");
-  t.view.className = "view";
-  if (kind === "web") {
-    t.view.innerHTML = `<div class="home"><div class="clock"><div class="time"><span class="h"></span><i>:</i><span class="m"></span></div><div class="g"></div></div><form class="omni" onsubmit="return false"><input type="text" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="Search or enter address" aria-label="Search or enter address"></form><div class="marks"></div></div>`;
-    t.input = $("input", t.view);
-    $("form", t.view).addEventListener("submit", (e) => { e.preventDefault(); go(t, t.input.value); });
-  } else {
-    t.view.classList.add("has-page"); t.view.appendChild(PAGES[kind]);
-  }
-  t.chip = document.createElement("div");
-  t.chip.className = "tab"; t.chip.setAttribute("role", "tab");
-  t.chip.innerHTML = `<span class="t"></span><button class="x" aria-label="Close tab">${X_SVG}</button>`;
-  t.chip.addEventListener("pointerdown", (e) => { if (!e.target.closest(".x")) select(t); });
-  $(".x", t.chip).addEventListener("click", (e) => { e.stopPropagation(); closeTab(t); });
-  tabs.push(t);
-  if (opts.host) { t.windowed = true; opts.host.appendChild(t.view); } // desktop mode: the page lives in its own window
-  else { $("#tabs").appendChild(t.chip); $("#views").appendChild(t.view); }
-  if (opts.url && opts.lazy) { t.pendingUrl = opts.url; t.title = hostOf(opts.url); }
-  paintChip(t); select(t); tickClock(); renderMarks();
-  if (kind === "settings") loadSettingsUI();
-  if (kind === "ai" && NV.onAiOpen) NV.onAiOpen();
-  if (kind === "games" && NV.onGamesOpen) NV.onGamesOpen();
-  if (kind === "entertainment" && NV.onEntOpen) NV.onEntOpen();
-  if (kind === "tools" && NV.onToolsOpen) NV.onToolsOpen();
-  if (opts.url && !opts.lazy) go(t, opts.url);
-  else if (kind === "web" && !opts.lazy) t.input.focus({ preventScroll: true });
-  return t;
-}
-
-const paintChip = (t) => { $(".t", t.chip).textContent = t.title; t.chip.title = t.title; if (t.onTitle) t.onTitle(t.title); };
-
-function select(t) {
-  active = t;
-  for (const x of tabs) { const on = x === t || x.windowed; x.view.classList.toggle("active", on); x.chip.setAttribute("aria-selected", x === t); } // windows are all visible at once
-  if (!t.windowed) t.chip.scrollIntoView({ inline: "nearest", block: "nearest" });
-  if (t.pendingUrl && !restoring) { const u = t.pendingUrl; t.pendingUrl = null; go(t, u); }
-  syncChrome(); saveTabs();
-  window.NV && NV.onTab && NV.onTab(t);
-  if (t.onFocus) t.onFocus();
-}
-
-function closeTab(t) {
-  const i = tabs.indexOf(t), wasActive = active === t;
-  if (t.loader) loaderStop(t.loader);
-  clearTimeout(t.blankTimer); clearTimeout(t.stallTimer);
-  tabs.splice(i, 1);
-  t.chip.classList.add("closing"); t.view.classList.remove("active"); t.view.classList.add("leaving");
-  setTimeout(() => { // let the close animation play, then clean up
-    const node = PAGES[t.kind];
-    if (node && node.parentNode === t.view) $("#pages").appendChild(node);
-    t.chip.remove(); t.view.remove();
-  }, reduceMotion() ? 0 : 190);
-  if (NV.desktopMode) { if (wasActive) active = null; return; } // closing a window never opens another one
-  if (!tabs.length) return newTab();
-  if (wasActive) select(tabs[Math.min(i, tabs.length - 1)]); else saveTabs();
-}
-
-function openPage(kind) {
-  if (kind === "movies") { kind = "entertainment"; NV.entShow && NV.entShow("movies"); } // Movies is now a section of Entertainment
-  if (!PAGES[kind]) return showBanner("the " + kind + " page isn't in this index.html. upload the newest index.html and clear the CDN cache.");
-  const ex = tabs.find((t) => t.kind === kind);
-  if (ex) { select(ex); if (kind === "settings") loadSettingsUI(); } else newTab({ kind });
-}
-
-/* ----- addresses like Nex.Velo/Music/Playlists: shown in the address bar, and typed to jump straight there ----- */
-const KIND_LABEL = { music: "Music", games: "Games", entertainment: "Entertainment", tools: "Tools", ai: "AI", settings: "Settings" };
-const titleSlug = (s) => ({ ugs: "UGS", "gn-math": "GN-Math" }[s] || s.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join("-"));
-function currentSub(kind) {
-  if (kind === "music") return $("#page-music .mtabs .on")?.dataset.mt || "";
-  if (kind === "games") { const k = $("#gtabs .on")?.dataset.g || ""; return k === "gn" ? "gn-math" : k; }
-  if (kind === "settings") { const s = $(".snav .nb.on")?.dataset.sec || ""; return s === "extensions" ? "apps" : s; }
-  if (kind === "entertainment") return NV.entSection ? NV.entSection() : "";
-  if (kind === "tools") return NV.toolsCurrent ? NV.toolsCurrent() : "";
-  return "";
-}
-const pageAddress = (kind) => "Nex.Velo/" + (KIND_LABEL[kind] || titleSlug(kind)) + (currentSub(kind) ? "/" + titleSlug(currentSub(kind)) : "");
-function openSub(app, sub) {
-  sub = sub.toLowerCase();
-  if (app === "music" && ["search", "playlists", "recent"].includes(sub)) NV.musicShowTab && NV.musicShowTab(sub);
-  else if (app === "games") {
-    const k = sub === "gn-math" || sub === "gnmath" ? "gn" : sub;
-    if (["gn", "obsidian", "ugs", "duckmath", "weslack"].includes(k)) NV.gamesShowSource && NV.gamesShowSource(k, true);
-  } else if (app === "settings") {
-    const id = sub === "apps" ? "extensions" : sub;
-    if ($("#sec-" + id)) showSec(id);
-  } else if (app === "entertainment") NV.entShow && NV.entShow(sub);
-  else if (app === "tools") NV.toolsShow && NV.toolsShow(sub);
-}
-// Returns true when the text was an address of one of our own pages (so nothing else should happen with it)
-function routeAlias(raw) {
-  const m = String(raw).trim().match(/^(?:https?:\/\/)?nex\.?velo(?:\/([a-z]+))?(?:\/([a-z0-9-]+))?\/?$/i);
-  if (!m) return false;
-  let app = (m[1] || "").toLowerCase(), sub = m[2] || "";
-  if (app === "movies") { app = "entertainment"; sub = sub || "movies"; } // Movies is now a section of Entertainment
-  if (!app) return true;
-  if (app === "servers") { openSettings("servers"); return true; }
-  if (!PAGES[app]) return false; // not one of ours: it is a file on this site
-  openPage(app);
-  if (sub) openSub(app, sub);
-  syncChrome();
-  return true;
-}
-
-async function go(t, raw) {
-  if (routeAlias(raw)) return;
-  if (t.kind !== "web") { const v = String(raw).trim(); if (v) newTab({ url: v }); return; } // typed a website while on one of our pages: open it in a new tab
-  const url = resolve(raw);
-  if (!url) return;
-  loaderStart(t);
-  try { await ready; } catch (e) { loaderStop(t.loader); toast(e.message); return; }
-  t.loader.target = Math.max(t.loader.target, 30);
-  if (!t.frame) {
-    t.frame = scramjet.createFrame();
-    t.view.insertBefore(t.frame.frame, t.loader.el);
-    t.view.classList.add("has-frame");
-    t.frame.frame.addEventListener("load", () => {
-      try { t.frame.frame.contentWindow.addEventListener("keydown", panicHandler, true); } catch {}
-      let blank = false; try { blank = t.frame.frame.contentWindow.location.href === "about:blank"; } catch {}
-      if (t.loading && !blank) { t.loading = false; t.loader.target = 100; }
-      if (!blank) { clearTimeout(t.stallTimer); watchBlank(t); } // a loaded page that stays empty means the proxy is out of date
-      syncTab(t);
+  async function openLibrary(q, page) {
+    const p = new URLSearchParams({ q: (q || "subject:fiction") + " ebook_access:public", limit: "24", page: String(page), fields: "key,title,author_name,first_publish_year,cover_i,ia" });
+    const d = await getJson("https://openlibrary.org/search.json?" + p);
+    const items = (d.docs || []).filter((x) => x.title && (x.ia || []).length).map((x) => {
+      const ia = encodeURIComponent(x.ia[0]);
+      return {
+        source: "openlibrary", id: "ol" + String(x.key || x.title).replace(/\W/g, ""), title: clean(x.title).slice(0, 140),
+        author: (x.author_name || []).slice(0, 2).join("; "), year: x.first_publish_year ? String(x.first_publish_year) : "",
+        subjects: [], cover: x.cover_i ? `https://covers.openlibrary.org/b/id/${x.cover_i}-M.jpg` : "",
+        read: `${AR}/stream/${ia}?ui=embed`, downloads: [{ label: "archive.org page", url: `${AR}/details/${ia}` }],
+      };
     });
+    return { items, more: (d.numFound || 0) > page * 24 };
   }
-  t.url = url; t.title = hostOf(url); paintChip(t); if (t.onSync) t.onSync(t);
-  t.loading = true; t.loader.creep = true;
-  clearTimeout(t.stallTimer);
-  t.stallTimer = setTimeout(() => { if (t.loading && t === active) showBanner("this page is taking a long time to start. if it stays white, press repair.", true); }, 20000);
-  try { t.frame.go(url); } catch (e) { toast("couldn't open that page"); console.error(e); loaderStop(t.loader); }
-  if (t === active) syncChrome();
-  saveTabs();
-}
 
-function displayUrl(u) {
-  try {
-    const x = new URL(u);
-    if (x.origin === location.origin) return "Nex.Velo" + x.pathname.replace(/\.html$/, "").replace(/\/$/, "") + x.search;
-  } catch {}
-  return u;
-}
-
-const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u; } };
-
-function liveUrl(t) {
-  if (!t.frame) return "";
-  try { if (t.frame.url) return String(t.frame.url.href || t.frame.url); } catch {}
-  try { return scramjet.decodeUrl(t.frame.frame.contentWindow.location.href); } catch {}
-  return t.url;
-}
-
-function syncTab(t) {
-  if (!t.frame) return;
-  const before = t.url;
-  const u = liveUrl(t); if (u) t.url = u;
-  let title = ""; try { title = t.frame.frame.contentDocument.title; } catch {}
-  t.title = title || hostOf(t.url) || "New tab"; paintChip(t);
-  if (t.onSync) t.onSync(t);
-  if (t === active) syncChrome();
-  if (before !== t.url) saveTabs();
-}
-
-function syncChrome() {
-  const browsing = !!(active && active.kind === "web" && active.frame);
-  const isPage = !!(active && PAGES[active.kind]);
-  document.body.classList.toggle("browsing", browsing);
-  document.body.classList.toggle("page-tab", isPage);
-  $("#address").readOnly = false;
-  if (isPage && document.activeElement !== $("#address")) $("#address").value = pageAddress(active.kind);
-  $("#bar-clock").hidden = !!(active && isHome(active)); // small clock appears once you leave the big-clock home page
-  if (browsing && document.activeElement !== $("#address")) $("#address").value = displayUrl(active.url);
-  document.title = browsing ? `${active.title} – Nex.Velo` : active && PAGES[active.kind] ? `${active.kind} – Nex.Velo` : "Nex.Velo";
-}
-setInterval(() => { for (const t of tabs) if (t.frame && (t === active || t.windowed)) syncTab(t); }, 900);
-
-const histTab = (t, fn) => { try { fn(t.frame.frame.contentWindow.history); } catch {} };
-function reloadTab(t) { try { loaderStart(t); t.loading = true; t.loader.creep = true; t.frame.frame.contentWindow.location.reload(); } catch { go(t, t.url); } }
-function homeTab(t) {
-  if (t.loader) loaderStop(t.loader);
-  clearTimeout(t.blankTimer); clearTimeout(t.stallTimer);
-  t.frame.frame.remove(); t.frame = null; t.url = ""; t.title = "New tab"; t.loading = false;
-  t.view.classList.remove("has-frame"); t.input.value = ""; paintChip(t); if (t.onSync) t.onSync(t); syncChrome(); saveTabs();
-}
-$("#back").addEventListener("click", () => histTab(active, (h) => h.back()));
-$("#forward").addEventListener("click", () => histTab(active, (h) => h.forward()));
-$("#reload").addEventListener("click", () => reloadTab(active));
-$("#home").addEventListener("click", () => homeTab(active));
-$("#address").addEventListener("keydown", (e) => { if (e.key === "Enter") { go(active, e.target.value); e.target.blur(); } });
-$("#address").addEventListener("focus", (e) => e.target.select());
-$("#address").addEventListener("blur", () => syncChrome());
-$("#new-tab").addEventListener("click", () => newTab());
-
-/* ================= Bookmarks ================= */
-const MARK_MAX = 5;
-let marks = []; try { marks = (JSON.parse(LS.get("nexvelo.bookmarks", "[]")) || []).slice(0, MARK_MAX); } catch {}
-const saveMarks = () => LS.set("nexvelo.bookmarks", JSON.stringify(marks));
-const markHost = (u) => { try { return new URL(u).hostname; } catch { return ""; } };
-function markHTML(m, i) {
-  const letter = esc((m.name || markHost(m.url) || "?").trim()[0] || "?").toUpperCase();
-  const icon = `${API}/api/favicon?host=${encodeURIComponent(markHost(m.url))}`;
-  return `<div class="mark"><button class="mark-b" data-open="${i}" title="${esc(m.url)}"><img src="${esc(icon)}" alt="" data-l="${letter}" onerror="this.outerHTML='<i class=ph>'+this.dataset.l+'</i>'"><span class="mn">${esc(m.name)}</span></button><button class="mark-e" data-edit="${i}" aria-label="Edit bookmark">${ICON_EDIT}</button><button class="mark-x" data-del="${i}" aria-label="Remove bookmark">${ICON_X}</button></div>`;
-}
-function renderMarks() {
-  const html = marks.map(markHTML).join("") + (marks.length < MARK_MAX ? '<button class="mark add" data-add="1" aria-label="Add a bookmark" title="Add a bookmark">+</button>' : "");
-  $$(".marks").forEach((el) => { el.innerHTML = html; });
-}
-let editing = -1;
-function markDialog(i) {
-  editing = i;
-  $("#mark-title").textContent = i >= 0 ? "edit bookmark" : "add a bookmark";
-  $("#mark-name").value = i >= 0 ? marks[i].name : ""; $("#mark-url").value = i >= 0 ? marks[i].url : "";
-  $("#mark-dlg").hidden = false; setTimeout(() => $(i >= 0 ? "#mark-name" : "#mark-url").focus(), 30);
-}
-document.addEventListener("click", (e) => {
-  const box = e.target.closest(".marks"); if (!box) return;
-  const open = e.target.closest("[data-open]"), del = e.target.closest("[data-del]"), ed = e.target.closest("[data-edit]");
-  if (e.target.closest("[data-add]")) markDialog(-1);
-  else if (ed) markDialog(+ed.dataset.edit);
-  else if (del) { marks.splice(+del.dataset.del, 1); saveMarks(); renderMarks(); }
-  else if (open) newTab({ url: marks[+open.dataset.open].url }); // opens through the proxy in a new tab
-});
-$("#mark-cancel").addEventListener("click", () => { $("#mark-dlg").hidden = true; });
-$("#mark-form").addEventListener("submit", (e) => {
-  e.preventDefault();
-  let u = $("#mark-url").value.trim(); if (!u) return;
-  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(u)) u = "https://" + u;
-  let host; try { host = new URL(u).hostname; } catch { return toast("that link doesn't look right"); }
-  const name = ($("#mark-name").value.trim() || host.replace(/^www\./, "")).slice(0, 14);
-  if (editing >= 0) marks[editing] = { name, url: u };
-  else if (marks.length < MARK_MAX) marks.push({ name, url: u });
-  saveMarks(); renderMarks(); $("#mark-dlg").hidden = true;
-});
-
-/* ================= Settings UI ================= */
-const status = $("#status");
-const say = (msg, kind = "") => { status.textContent = msg; status.className = kind; };
-const normalizeWisp = (v) => {
-  v = v.trim(); if (!v) return "";
-  if (/^https?:\/\//i.test(v)) v = v.replace(/^http/i, "ws");
-  if (!/^wss?:\/\//i.test(v)) v = "wss://" + v;
-  return v.endsWith("/") ? v : v + "/";
-};
-function testWisp(url, ms = 6000) {
-  return new Promise((resolve) => {
-    let done = false, ws;
-    const finish = (ok) => { if (!done) { done = true; try { ws.close(); } catch {} resolve(ok); } };
-    try { ws = new WebSocket(url); } catch { return resolve(false); }
-    ws.onopen = () => finish(true); ws.onerror = () => finish(false); setTimeout(() => finish(false), ms);
+  app.get("/api/ent/books", async (req, reply) => {
+    const q = String(req.query?.q || "").trim().slice(0, 100), page = pageNo(req.query?.page);
+    try {
+      return await cached(`ent:books:${page}:${q.toLowerCase()}`, async () => {
+        try { const r = await gutenberg(q, page); if (r.items.length || page > 1) return { ...r, source: "gutenberg" }; } catch {}
+        return { ...(await openLibrary(q, page)), source: "openlibrary" }; // Gutendex is down or found nothing: try Open Library
+      }, 10 * 60 * 1000);
+    } catch (e) { return fail(reply, e); }
   });
-}
 
-function buildAppearance() {
-  $("#swatches").innerHTML = THEMES.map(([id, label, c]) => `<button class="sw${settings.theme === id ? " on" : ""}" data-theme="${id}"><i style="--c:${c}"></i>${label}</button>`).join("").replace(/class="sw( on)?" data-theme="custom"/, (m) => m.replace("class=\"sw", "class=\"sw custom"));
-  const walls = [["none", "none"], ["forest", "forest"], ["ocean", "ocean"], ["sky", "sky"], ["custom", "custom"]];
-  $("#walls").innerHTML = walls.map(([id, label]) => {
-    const src = id === "none" ? null : wallSrc(id);
-    const thumb = src && /^(https?:|data:image\/)/i.test(src) ? `style="background-image:url('${src.replace(/'/g, "%27")}')"` : "";
-    return `<button class="wt${settings.wall === id ? " on" : ""}" data-wall="${id}"><i ${thumb}>${thumb ? "" : id === "none" ? "–" : id === "custom" ? "+" : ""}</i>${label}</button>`;
-  }).join("");
-  $("#custom-opts").hidden = settings.theme !== "custom";
-  $("#wall-custom").hidden = settings.wall !== "custom";
-  $("#wall-clear").hidden = !wallData();
-  $("#wall-note").textContent = wallData() ? "using your uploaded image" : "";
-  $("#blur-opts").hidden = settings.wall === "none";
-  $("#blur-amt-fld").hidden = !settings.blur;
-}
-$("#swatches").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-theme]"); if (!b) return;
-  settings.theme = b.dataset.theme; save(); applyTheme(); buildAppearance();
-});
-$("#c-font").innerHTML = Object.entries(FONTS).map(([k, f]) => `<option value="${k}">${f[0]}</option>`).join("");
-function loadCustomUI() {
-  const c = settings.custom;
-  $("#c-bg").value = c.bg; $("#c-fg").value = c.fg; $("#c-accent").value = c.accent;
-  $("#c-clock").value = c.clock || c.fg; $("#c-bar").value = c.bar || "#2a2d33"; $("#c-font").value = c.font; $("#c-size").value = c.size;
-}
-const customInput = (id, key, mapper = (v) => v) => $(id).addEventListener("input", (e) => { settings.custom[key] = mapper(e.target.value); save(); applyTheme(); });
-customInput("#c-bg", "bg"); customInput("#c-fg", "fg"); customInput("#c-accent", "accent");
-customInput("#c-clock", "clock"); customInput("#c-bar", "bar"); customInput("#c-font", "font"); customInput("#c-size", "size", (v) => +v);
-$("#c-reset").addEventListener("click", () => {
-  settings.custom = { bg: "#14161a", fg: "#f2f2f2", accent: "#8ab4ff", clock: "", bar: "", font: "jetbrains", size: 100 };
-  save(); applyTheme(); loadCustomUI();
-});
-$("#walls").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-wall]"); if (!b) return;
-  settings.wall = b.dataset.wall; save(); applyWall(); buildAppearance();
-});
-$("#wall-url").addEventListener("change", (e) => { settings.wallUrl = e.target.value.trim(); LS.del("nexvelo.wallpaper"); save(); applyWall(); buildAppearance(); });
-async function shrinkImage(file) {
-  const url = URL.createObjectURL(file);
-  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
-  const k = Math.min(1, 1920 / Math.max(img.width, img.height));
-  const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
-  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
-  let q = .85, data = c.toDataURL("image/jpeg", q);
-  while (data.length > 2800000 && q > .4) { q -= .15; data = c.toDataURL("image/jpeg", q); }
-  return data;
-}
-$("#wall-upload").addEventListener("click", () => $("#wall-file").click());
-$("#wall-file").addEventListener("change", async (e) => {
-  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
-  if (!f.type.startsWith("image/")) return toast("that isn't an image");
-  try {
-    const data = await shrinkImage(f);
-    LS.set("nexvelo.wallpaper", data);
-    if (LS.get("nexvelo.wallpaper", "") !== data) throw new Error("storage full");
-    settings.wall = "custom"; save(); applyWall(); buildAppearance(); toast("wallpaper set");
-  } catch { LS.del("nexvelo.wallpaper"); toast("couldn't use that image. try a smaller one."); }
-});
-$("#wall-clear").addEventListener("click", () => { LS.del("nexvelo.wallpaper"); applyWall(); buildAppearance(); });
-$("#blur").addEventListener("change", (e) => { settings.blur = e.target.checked; save(); applyWall(); buildAppearance(); });
-$("#blur-amt").addEventListener("input", (e) => { settings.blurAmt = +e.target.value; save(); applyWall(); });
-
-function loadSettingsUI() {
-  loadCustomUI();
-  $("#wisp-url").value = settings.wisp; $("#engine").value = settings.engine;
-  $("#adblock").checked = settings.adblock; $("#clock").checked = settings.clock; $("#h24").checked = settings.h24;
-  $("#blur").checked = settings.blur; $("#blur-amt").value = settings.blurAmt; $("#wall-url").value = settings.wallUrl;
-  $("#wisp-auto").checked = settings.wispAuto !== false; $("#launch-mode").value = settings.launch; $("#launch-redirect").checked = settings.launchRedirect; $("#panic-on").checked = settings.panicOn; $("#panic-key").textContent = settings.panicKey; $("#panic-site").value = settings.panicSite; $("#panic-url").value = settings.panicUrl; $("#panic-url-fld").hidden = settings.panicSite !== "custom"; $("#panic-mode").value = settings.panicMode; $("#music-on").checked = settings.music; $("#games-on").checked = settings.games; $("#movies-on").checked = settings.movies; if ($("#tools-on")) $("#tools-on").checked = settings.tools; $("#ai-on").checked = settings.ai; $("#name").value = settings.name;
-  buildAppearance(); say("");
-  NV.refreshMusicChips && NV.refreshMusicChips();
-}
-function openSettings(sec) {
-  openPage("settings");
-  if (sec) showSec(sec);
-}
-function showSec(id) {
-  $$(".nb").forEach((b) => b.classList.toggle("on", b.dataset.sec === id));
-  $$(".sec").forEach((s) => s.classList.toggle("on", s.id === "sec-" + id));
-  $(".spane").scrollTop = 0;
-  if (id === "diagnostics") { // the Diagnostics tool is drawn the first time this section is opened
-    const box = $("#diag-root");
-    if (box && !box.dataset.ready && window.__nvDiagMount) apiReady.then(() => { if (!box.dataset.ready) { box.dataset.ready = "1"; window.__nvDiagMount(box); } });
-  }
-  syncChrome();
-}
-$(".snav").addEventListener("click", (e) => { const b = e.target.closest(".nb"); if (b) showSec(b.dataset.sec); });
-$("#open-settings").addEventListener("click", () => openSettings());
-
-$("#wisp-test").addEventListener("click", async () => {
-  const url = normalizeWisp($("#wisp-url").value);
-  if (!url) return say("enter a wisp server address.", "bad");
-  say("testing connection…");
-  const ok = await testWisp(url);
-  say(ok ? "server is reachable." : "couldn't connect. check the address and that it ends in /wisp/.", ok ? "ok" : "bad");
-});
-$("#wisp-default").addEventListener("click", () => { $("#wisp-url").value = defaultWisp; say(""); });
-$("#wisp-save").addEventListener("click", async () => {
-  const url = normalizeWisp($("#wisp-url").value);
-  if (!url) return say("enter a wisp server address.", "bad");
-  settings.wisp = url; activeWisp = url; save(); $("#wisp-url").value = url;
-  try { await applyTransport(); say("server saved. new requests will use it.", "ok"); }
-  catch { say("couldn't switch servers. reload the page and try again.", "bad"); }
-});
-$("#engine").addEventListener("change", (e) => { settings.engine = e.target.value; save(); });
-$("#adblock").addEventListener("change", (e) => { settings.adblock = e.target.checked; save(); pushAdblock(); });
-$("#clock").addEventListener("change", (e) => { settings.clock = e.target.checked; save(); tickClock(); });
-$("#h24").addEventListener("change", (e) => { settings.h24 = e.target.checked; save(); tickClock(); });
-$("#music-on").addEventListener("change", (e) => { settings.music = e.target.checked; save(); NV.applyMusicToggle && NV.applyMusicToggle(); });
-$("#wisp-auto").addEventListener("change", (e) => { settings.wispAuto = e.target.checked; save(); });
-// the launch mode select offers all four ways to open Nex.Velo, or asking every time
-$("#launch-mode").innerHTML = [["ask", "ask me each time"], ["here", "continue on the main page"], ["blank", "about:blank"], ["blob", "blob cloak"], ["window", "window about:blank"]].map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
-$("#launch-mode").addEventListener("change", (e) => { settings.launch = e.target.value; save(); });
-$("#launch-redirect").addEventListener("change", (e) => { settings.launchRedirect = e.target.checked; save(); });
-$("#panic-on").addEventListener("change", (e) => { settings.panicOn = e.target.checked; save(); });
-$("#panic-site").addEventListener("change", (e) => { settings.panicSite = e.target.value; $("#panic-url-fld").hidden = e.target.value !== "custom"; save(); });
-$("#panic-mode").addEventListener("change", (e) => { settings.panicMode = e.target.value; save(); });
-$("#panic-url").addEventListener("change", (e) => { let u = e.target.value.trim(); if (u && !/^[a-z][a-z0-9+.-]*:/i.test(u)) u = "https://" + u; settings.panicUrl = u; e.target.value = u; save(); });
-// Pick the escape key: click the button, then press the key you want. Escape itself can be chosen now. Click the button again to cancel.
-$("#panic-key").addEventListener("click", (e) => {
-  capturing = !capturing;
-  e.target.textContent = capturing ? "press a key…" : settings.panicKey;
-});
-addEventListener("keydown", (e) => {
-  if (!capturing) return;
-  if (["Shift", "Control", "Alt", "Meta", "CapsLock", "Tab"].includes(e.key)) return; // wait for the real key
-  e.preventDefault(); e.stopPropagation(); capturing = false;
-  settings.panicKey = e.key.length === 1 ? e.key.toLowerCase() : e.key; save();
-  $("#panic-key").textContent = settings.panicKey;
-  toast("escape key set to " + settings.panicKey);
-}, true);
-$("#ai-on").addEventListener("change", (e) => { settings.ai = e.target.checked; save(); });
-$("#games-on").addEventListener("change", (e) => { settings.games = e.target.checked; save(); });
-$("#movies-on").addEventListener("change", (e) => { settings.movies = e.target.checked; save(); });
-// the Movies switch in Settings > apps now controls Entertainment, and Tools gets a switch of its own
-(function appsSection() {
-  const m = $("#movies-on"), row = m && m.closest("label"); if (!row) return;
-  const b = $("b", row), sm = $("small", row);
-  if (b) b.textContent = "entertainment"; if (sm) sm.textContent = "movies, tv shows, books and audiobooks. everything is free and legal to watch, read or listen to";
-  if ($("#tools-on")) return;
-  const n = document.createElement("label"); n.className = "switch";
-  n.innerHTML = '<div><b>tools</b><small>a password generator, random numbers, word counter, converters and more</small></div><input type="checkbox" id="tools-on">';
-  row.after(n); const t = $("#tools-on"); t.checked = settings.tools;
-  t.addEventListener("change", (e) => { settings.tools = e.target.checked; save(); });
-})();
-$("#name").addEventListener("input", (e) => { settings.name = e.target.value.trim(); save(); tickClock(); });
-
-/* account: backup / restore / reset */
-const DATA_KEYS = ["nexvelo.settings", "nexvelo.playlists", "nexvelo.recent", "nexvelo.music", "nexvelo.volume", "nexvelo.tabs", "nexvelo.ai", "nexvelo.servers"];
-$("#exp").addEventListener("click", () => {
-  const out = {}; DATA_KEYS.forEach((k) => { out[k] = LS.get(k, null); });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 2)], { type: "application/json" }));
-  a.download = "nex-velo-data.json"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-});
-$("#imp").addEventListener("click", () => $("#imp-file").click());
-$("#imp-file").addEventListener("change", async (e) => {
-  const f = e.target.files[0]; if (!f) return;
-  try {
-    const data = JSON.parse(await f.text());
-    DATA_KEYS.forEach((k) => { if (typeof data[k] === "string") LS.set(k, data[k]); });
-    toast("imported. reloading…"); setTimeout(() => location.reload(), 700);
-  } catch { toast("that file couldn't be read."); }
-});
-(function layoutButton() { // run the first-visit setup again from Settings
-  const reset = $("#reset"); if (!reset || $("#redo-setup")) return;
-  const b = document.createElement("button"); b.className = "btn"; b.id = "redo-setup"; b.type = "button"; b.textContent = "change layout and launch mode…";
-  b.addEventListener("click", () => (NV.runSetup ? NV.runSetup() : toast("the setup file hasn't loaded yet")));
-  reset.before(b);
-})();
-$("#reset").addEventListener("click", () => {
-  if (!confirm("reset all settings, playlists and recently played on this browser?")) return;
-  DATA_KEYS.forEach(LS.del); location.reload();
-});
-
-/* ================= Apps (the nine-dot button in the top bar) ================= */
-const APP_SVG = {
-  games: '<svg viewBox="0 0 24 24"><path d="M6 9h12a3 3 0 0 1 3 3.2l-.6 4A2.4 2.4 0 0 1 16 17.3L15 15H9l-1 2.3a2.4 2.4 0 0 1-4.4-1.1l-.6-4A3 3 0 0 1 6 9z"/><path d="M8 11v3M6.5 12.5h3M16 12h.01M18 13.5h.01"/></svg>',
-  entertainment: '<svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M17 2l-5 5-5-5"/></svg>',
-  tools: '<svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.4 2.4-2.6-.6-.6-2.6z"/></svg>',
-  music: '<svg viewBox="0 0 24 24"><path d="M9 18V6l11-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></svg>',
-  ai: '<svg viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z"/></svg>',
-  servers: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>',
-  diagnostics: '<svg viewBox="0 0 24 24"><path d="M3 12h4l2-6 4 12 2-6h6"/></svg>',
-  settings: '<svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>',
-};
-// [id, name, shown?, what it does]
-const APPS = [
-  ["games", "Games", () => settings.games, () => openPage("games")],
-  ["music", "Music", () => settings.music, () => openPage("music")],
-  ["entertainment", "Entertainment", () => settings.movies, () => openPage("entertainment")],
-  ["tools", "Tools", () => settings.tools, () => openPage("tools")],
-  ["ai", "AI", () => settings.ai, () => openPage("ai")],
-];
-let appsOpen = false, appsTimer = 0;
-function openApps() {
-  const menu = $("#apps-menu"), btn = $("#apps-btn");
-  clearTimeout(appsTimer);
-  const shown = APPS.filter((a) => a[2]());
-  menu.innerHTML = shown.length ? shown.map((a) => `<button class="app-tile" role="menuitem" data-app="${a[0]}">${APP_SVG[a[0]]}<span>${esc(a[1])}</span></button>`).join("") : '<div class="empty">no apps are turned on. turn them on in Settings → apps.</div>';
-  const r = btn.getBoundingClientRect();
-  menu.style.top = r.bottom + 8 + "px"; menu.style.right = Math.max(8, innerWidth - r.right - 4) + "px"; menu.style.left = "auto";
-  menu.hidden = false; menu.className = "in"; appsOpen = true;
-  btn.setAttribute("aria-expanded", "true");
-}
-function closeApps() {
-  if (!appsOpen) return;
-  const menu = $("#apps-menu");
-  appsOpen = false; $("#apps-btn").setAttribute("aria-expanded", "false");
-  menu.className = "out";
-  appsTimer = setTimeout(() => { if (!appsOpen) { menu.hidden = true; menu.className = ""; } }, reduceMotion() ? 0 : 150);
-}
-$("#apps-btn").addEventListener("click", () => (appsOpen ? closeApps() : openApps()));
-$("#apps-menu").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-app]"); if (!b) return;
-  const a = APPS.find((x) => x[0] === b.dataset.app); closeApps(); a && a[3]();
-});
-document.addEventListener("pointerdown", (e) => { if (appsOpen && !e.target.closest("#apps-menu, #apps-btn")) closeApps(); });
-addEventListener("keydown", (e) => { if (e.key === "Escape" && appsOpen) closeApps(); });
-addEventListener("blur", () => closeApps()); // clicking into a page frame
-
-/* ================= Tour ================= */
-const STEPS = [
-  ["#tabs", "these are your tabs. every tab is its own proxied page."],
-  ["#new-tab", "open a new tab here."],
-  ["#apps-btn", "the nine dots open your apps: games, music, entertainment, tools and ai."],
-  ["#open-settings", "themes, wallpapers, your wisp server and more."],
-  [".view.active .omni", "type a search or a web address and press enter."],
-];
-function startTour() {
-  const steps = STEPS.filter(([s]) => { const el = $(s); return el && el.offsetParent !== null; });
-  if (!steps.length) return;
-  let i = 0;
-  const ov = $("#tour"), hl = $("#tour-hl"), card = $("#tour-card"), next = $("#tour-next");
-  ov.hidden = false;
-  const show = () => {
-    const [sel, text] = steps[i], r = $(sel).getBoundingClientRect(), pad = 6;
-    Object.assign(hl.style, { left: r.left - pad + "px", top: r.top - pad + "px", width: r.width + pad * 2 + "px", height: r.height + pad * 2 + "px" });
-    $("#tour-text").textContent = text;
-    next.textContent = i === steps.length - 1 ? "done" : "next";
-    const cw = Math.min(280, innerWidth * .86);
-    const below = r.bottom + 14 + 130 < innerHeight;
-    card.style.top = (below ? r.bottom + 14 : Math.max(8, r.top - 14 - 130)) + "px";
-    card.style.left = Math.max(8, Math.min(innerWidth - cw - 8, r.left + r.width / 2 - cw / 2)) + "px";
-  };
-  const end = () => { ov.hidden = true; next.onclick = null; $("#tour-skip").onclick = null; };
-  next.onclick = () => { if (++i >= steps.length) end(); else show(); };
-  $("#tour-skip").onclick = end;
-  show();
-}
-$("#tour-btn").addEventListener("click", startTour);
-
-/* ================= Boot ================= */
-const NV = window.NV = {
-  settings, save, esc, toast, spring, openSettings, openPage, openUrl: (u) => newTab({ url: u }), LS, defaultWisp, VERSION, api: (p) => API + p, testWisp, normalizeWisp,
-  proxyFrame: async (url) => { await ready; const f = scramjet.createFrame(); f.go(url); return f.frame; },
-  setWisp: async (url) => { settings.wisp = url; activeWisp = url; save(); $("#wisp-url").value = url; await applyTransport(); },
-  activeWisp: () => activeWisp, loaded: {}, rawFetch: _fetch, apiBase: () => API || location.origin,
-  syncChrome: () => syncChrome(), routeTo: (a) => routeAlias(a), panic: panicHandler,
-  repairProxy: () => repairProxy(true),
-  newTab, closeTab, select, go, hist: histTab, reloadTab, homeTab, displayUrl, panicDest, wallSrcNow, desktopMode: false,
-};
-// Entertainment and Tools live in their own files. They are loaded from here so index.html doesn't need to change.
-for (const f of ["entertainment.js", "tools.js", "setup.js"]) {
-  const s = document.createElement("script"); s.src = "/" + f; s.onerror = () => showBanner("couldn't load " + f + ". upload it to the public folder and refresh.");
-  document.head.appendChild(s);
-}
-applyTheme(); applyWall();
-$("#ver").textContent = "v" + VERSION;
-$("#logo").addEventListener("click", () => newTab());
-
-function bootTabs() {
-  restoring = true;
-  let saved = null; try { saved = JSON.parse(LS.get("nexvelo.tabs", "null")); } catch {}
-  if (saved && saved.t && saved.t.length) {
-    saved.t.forEach((x) => { if (x.k === "movies") x.k = "entertainment"; if (x.k === "web" || PAGES[x.k]) if (!(PAGES[x.k] && tabs.some((t) => t.kind === x.k))) newTab({ kind: x.k, url: x.u, lazy: true }); });
-  }
-  restoring = false;
-  if (!tabs.length) newTab(); else select(tabs[Math.min(Math.max(saved.a, 0), tabs.length - 1)] || tabs[0]);
-}
-// Desktop mode (chosen in the setup) loads its own file. Everything opens in windows there instead of tabs.
-if (settings.mode === "desktop") {
-  const d = document.createElement("script"); d.src = "/desktop.js";
-  d.onload = () => NV.desktopStart();
-  d.onerror = () => { showBanner("couldn't load desktop.js. upload it to the public folder. the normal layout is shown for now."); bootTabs(); };
-  document.head.appendChild(d);
-} else bootTabs();
-
-apiReady.then(renderMarks);
-
-const checkModules = () => {
-  const need = { music: "music.js", ai: "ai.js", games: "games.js", movies: "movies.js", servers: "servers.js" };
-  const miss = Object.entries(need).filter(([k]) => !NV.loaded[k]).map(([, f]) => f);
-  if (miss.length) showBanner("these parts couldn't start: " + miss.join(", ") + ". upload the newest files to the public folder and clear the CDN cache.");
-};
-if (window.__nvScriptsDone) setTimeout(checkModules, 300); else addEventListener("nv-scripts", () => setTimeout(checkModules, 300), { once: true });
-
-/* ================= Automatic updates ================= */
-// version.json on the host holds the newest version number. When it differs from this page, offer the update and apply it.
-let updating = false, laterUntil = 0;
-const typing = () => { const a = document.activeElement; return !!a && /^(INPUT|TEXTAREA)$/.test(a.tagName) && !!a.value && a.type !== "range" && a.type !== "checkbox"; };
-function applyUpdate(v) { location.replace(location.pathname + "?nv=" + encodeURIComponent(v) + location.hash); }
-function offerUpdate(v) {
-  const bar = $("#update"); if (!bar || updating || Date.now() < laterUntil) return;
-  updating = true; let n = 20;
-  const paint = () => { bar.innerHTML = `<span>Nex.Velo v${esc(v)} is ready. updating in ${n}s…</span><button class="btn" data-now type="button">update now</button><button class="btn" data-later type="button">later</button>`; };
-  paint(); bar.hidden = false;
-  const tick = setInterval(() => { if (typing()) { n = 20; paint(); return; } if (--n <= 0) { clearInterval(tick); applyUpdate(v); } else paint(); }, 1000);
-  bar.onclick = (e) => {
-    if (e.target.closest("[data-now]")) { clearInterval(tick); applyUpdate(v); }
-    if (e.target.closest("[data-later]")) { clearInterval(tick); bar.hidden = true; updating = false; laterUntil = Date.now() + 30 * 60 * 1000; }
-  };
-}
-async function checkUpdate() {
-  try {
-    for (const file of ["/version.json", "/version.js"]) {
-      const r = await _fetch(file + "?t=" + Date.now(), { cache: "no-store" });
-      if (!r.ok) continue;
-      const v = JSON.parse(await r.text()).version; if (v && v !== VERSION) offerUpdate(v); break;
+  // The plain text of a Project Gutenberg book, cleaned up for the built-in reader: the licence is cut off, lines are joined into
+  // paragraphs, and chapter headings are found so the reader can offer a contents list.
+  const NUM = "[\\dIVXLCDM]+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|first|second|third|fourth|fifth";
+  const HEAD = new RegExp("^(?:chapter|book|part|volume|canto|act|scene|section|letter|stave)\\s+(?:" + NUM + ")\\b[\\s.:\\-—]*.{0,50}$|^(?:preface|prologue|epilogue|introduction|contents|dedication|appendix)[.:]?$", "i");
+  async function gutenbergText(n) {
+    const urls = [`https://www.gutenberg.org/cache/epub/${n}/pg${n}.txt`, `https://www.gutenberg.org/ebooks/${n}.txt.utf-8`, `https://www.gutenberg.org/files/${n}/${n}-0.txt`];
+    let raw = "", why = "";
+    for (const u of urls) {
+      try {
+        const r = await withTimeout(fetch(u, { headers: { "user-agent": UA }, redirect: "follow" }), 30000);
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const t = await r.text();
+        if (t.length < 1500) throw new Error("the file was empty");
+        raw = t; break;
+      } catch (e) { why = String(e?.message || e); }
     }
-  } catch {}
-  try { const reg = await navigator.serviceWorker?.getRegistration(); reg && reg.update(); } catch {}
-}
-setTimeout(checkUpdate, 20000);
-setInterval(checkUpdate, 5 * 60 * 1000);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) checkUpdate(); });
-document.addEventListener("change", (e) => { if (/^(music|games|movies|ai|tools)-on$/.test(e.target.id) && NV.onSettingsApps) NV.onSettingsApps(); }); // the desktop dock follows the app switches
+    if (!raw) throw new Error("couldn't get the text of this book (" + why + ")");
+    raw = raw.slice(0, 6e6).replace(/\r/g, "").replace(/^\uFEFF/, "");
+    const a = raw.search(/\*\*\* ?START OF (?:THE|THIS) PROJECT GUTENBERG EBOOK[^\n]*\n/i), z = raw.search(/\*\*\* ?END OF (?:THE|THIS) PROJECT GUTENBERG EBOOK/i);
+    const body = raw.slice(a >= 0 ? raw.indexOf("\n", a) + 1 : 0, z >= 0 ? z : undefined);
+    const paras = body.split(/\n\s*\n+/).map((p) => p.replace(/\s*\n\s*/g, " ").replace(/ {2,}/g, " ").trim()).filter(Boolean);
+    const heads = [];
+    paras.forEach((p, i) => {
+      const caps = p.length > 3 && p.length <= 48 && p === p.toUpperCase() && (p.match(/[A-Z]/g) || []).length >= 5 && !/[.!?,;:]$/.test(p);
+      if (p.length <= 70 && (HEAD.test(p) || /^[IVXLC]{1,7}\.?$/.test(p) || caps)) heads.push({ i, t: p });
+    });
+    return { text: paras.join("\n\n"), heads: heads.slice(0, 400) };
+  }
+  app.get("/api/ent/book", async (req, reply) => {
+    const m = String(req.query?.id || "").match(/^pg(\d{1,6})$/);
+    if (!m) { reply.code(400); return { error: "this book can only be read through its original page" }; }
+    try { return await cached("ent:book:" + m[1], () => gutenbergText(m[1]), 6 * 3600e3); }
+    catch (e) { return fail(reply, e); }
+  });
 
-})();
+  /* ================= Audiobooks (LibriVox) ================= */
+  async function audiobookSearch(q, page) {
+    const words = String(q || "").replace(/[^\w\s'-]/g, " ").replace(/\s+/g, " ").trim();
+    const p = new URLSearchParams({
+      q: "collection:librivoxaudio AND mediatype:audio" + (words ? ` AND (title:(${words}) OR creator:(${words}))` : ""),
+      rows: "24", page: String(page), output: "json",
+    });
+    for (const f of ["identifier", "title", "creator", "year", "description"]) p.append("fl[]", f);
+    p.append("sort[]", "downloads desc");
+    const d = await getJson(`${AR}/advancedsearch.php?${p}`);
+    const docs = d?.response?.docs || [];
+    return {
+      items: docs.filter((x) => x.identifier && x.title).map((x) => ({
+        id: x.identifier, title: clean(x.title).slice(0, 120), author: clean(x.creator).slice(0, 80),
+        year: x.year ? String(one(x.year)).slice(0, 4) : "", cover: `${AR}/services/img/${encodeURIComponent(x.identifier)}`,
+        overview: clean(x.description).slice(0, 500),
+      })),
+      more: (d?.response?.numFound || 0) > page * 24,
+    };
+  }
+
+  app.get("/api/ent/audiobooks", async (req, reply) => {
+    const q = String(req.query?.q || "").trim().slice(0, 100), page = pageNo(req.query?.page);
+    try { return await cached(`ent:ab:search:${page}:${q.toLowerCase()}`, () => audiobookSearch(q, page), 10 * 60 * 1000); }
+    catch (e) { return fail(reply, e); }
+  });
+
+  const seconds = (v) => {
+    if (v == null || v === "") return 0;
+    const s = String(v);
+    if (/^\d+(\.\d+)?$/.test(s)) return Math.round(parseFloat(s));
+    const parts = s.split(":").map(Number);
+    return parts.some(Number.isNaN) ? 0 : parts.reduce((a, b) => a * 60 + b, 0);
+  };
+
+  async function audiobookTracks(id) {
+    const m = await cached("ent:ab:meta:" + id, () => getJson(`${AR}/metadata/${encodeURIComponent(id)}`), 30 * 60 * 1000);
+    const mp3 = (m.files || []).filter((f) => /\.mp3$/i.test(f.name));
+    let files = mp3.filter((f) => /64kbps mp3/i.test(f.format || "")); // one copy of each chapter
+    if (!files.length) files = mp3.filter((f) => /mp3/i.test(f.format || "") && !/_vbr|_128/i.test(f.name));
+    if (!files.length) files = mp3;
+    files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    const meta = m.metadata || {};
+    return {
+      id, title: clean(meta.title), author: clean(meta.creator), description: clean(meta.description).slice(0, 900),
+      tracks: files.map((f, i) => ({ file: f.name, title: clean(f.title) || "Chapter " + (i + 1), length: seconds(f.length) })),
+    };
+  }
+
+  app.get("/api/ent/audiobook", async (req, reply) => {
+    const id = String(req.query?.id || "");
+    if (!/^[A-Za-z0-9._-]{3,120}$/.test(id)) { reply.code(400); return { error: "bad id" }; }
+    try {
+      const d = await audiobookTracks(id);
+      if (!d.tracks.length) throw new Error("this audiobook has no playable chapters");
+      return d;
+    } catch (e) { return fail(reply, e); }
+  });
+
+  // Audio comes through this server so it plays even where archive.org is blocked. Seeking works (Range requests are passed on).
+  app.get("/api/ent/audio", async (req, reply) => {
+    const id = String(req.query?.id || ""), file = String(req.query?.file || "");
+    if (!/^[A-Za-z0-9._-]{3,120}$/.test(id) || !/^[\w .,'()&+-]{1,200}\.mp3$/i.test(file)) { reply.code(400); return { error: "bad request" }; }
+    try {
+      const up = await withTimeout(fetch(`${AR}/download/${encodeURIComponent(id)}/${encodeURIComponent(file)}`, {
+        headers: { "user-agent": UA, ...(req.headers.range ? { range: req.headers.range } : {}) }, redirect: "follow",
+      }), 20000);
+      if (!up.ok && up.status !== 206) throw new Error("archive.org answered " + up.status);
+      reply.code(up.status);
+      const encoded = up.headers.get("content-encoding");
+      for (const h of ["content-type", "content-length", "content-range"]) { const v = up.headers.get(h); if (v && !(h === "content-length" && encoded)) reply.header(h, v); }
+      reply.header("accept-ranges", "bytes").header("cache-control", "public, max-age=3600");
+      return reply.send(Readable.fromWeb(up.body));
+    } catch (e) { return fail(reply, e); }
+  });
+
+  /* ================= Pictures (only from the sources above) ================= */
+  app.get("/api/ent/img", async (req, reply) => {
+    const u = String(req.query?.u || "");
+    if (!/^https:\/\/(www\.gutenberg\.org\/cache\/epub\/|covers\.openlibrary\.org\/|archive\.org\/services\/img\/)/.test(u)) { reply.code(400); return "bad address"; }
+    try {
+      const up = await withTimeout(fetch(u, { headers: { "user-agent": UA }, redirect: "follow" }), 15000);
+      const type = up.headers.get("content-type") || "";
+      if (!up.ok || !/^image\//i.test(type)) { reply.code(404); return "no picture"; }
+      reply.header("content-type", type).header("cache-control", "public, max-age=86400");
+      return reply.send(Readable.fromWeb(up.body));
+    } catch { reply.code(502); return "couldn't load the picture"; }
+  });
+
+  /* ================= Health (used to find out what is failing) ================= */
+  app.get("/api/ent/health", async () => {
+    const out = [];
+    const t = async (name, fn) => {
+      const s = Date.now();
+      try { out.push({ name, ok: true, detail: (await fn()) + " (" + (Date.now() - s) + " ms)" }); }
+      catch (e) { out.push({ name, ok: false, detail: String(e?.message || e) }); }
+    };
+    await t("Books: Project Gutenberg (Gutendex)", async () => { const r = await gutenberg("pride", 1); if (!r.items.length) throw new Error("no results"); return r.items.length + " results"; });
+    await t("Books: Open Library (backup)", async () => { const r = await openLibrary("pride", 1); if (!r.items.length) throw new Error("no results"); return r.items.length + " results"; });
+    await t("Book text for the built-in reader (Gutenberg)", async () => { const d = await gutenbergText("84"); if (d.text.length < 5000) throw new Error("the text was too short"); return Math.round(d.text.length / 1000) + " thousand characters, " + d.heads.length + " chapter headings"; });
+    await t("Audiobooks: LibriVox", async () => {
+      const r = await audiobookSearch("", 1); if (!r.items.length) throw new Error("no results");
+      const d = await audiobookTracks(r.items[0].id); if (!d.tracks.length) throw new Error("no chapters in " + r.items[0].title);
+      return r.items.length + " results, \"" + r.items[0].title + "\" has " + d.tracks.length + " chapters";
+    });
+    return { sources: out, anyOk: out.some((s) => s.ok) };
+  });
+
+  return {};
+}
