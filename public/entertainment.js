@@ -328,4 +328,4 @@
 
   NV.loaded.entertainment = true;
   if (page.parentNode && page.parentNode.id !== "pages") show(cur); // this tab was restored before the file finished loading
-})();
+})(); 
