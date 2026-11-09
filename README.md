@@ -8,13 +8,19 @@ proudly produced,owned and managed by the Nexero Team
 ----------------------------------------------------------
 
 PROXY USED: Scramjet
+↳ WISP SERVER USED: Scramjet Wisp + HolyWisp
 
-MUSIC LIBRARY: SoundCloud, Youtube Music
+MUSIC LIBRARY: SoundCloud, Youtube Music, Audius
 
-GAMES: Duckmath, Weslack
+MOVIES: (not confirmed)
 
-AI: Groq
+GAMES: Duckmath, Weslack + GN math, Ultimate Game Stash, Obsidianig
+
+AI: (not confirmed)
 
 INSPIRATION: Mochii proxy (produced by Atmo1lost on GitHub)
 
 ----------------------------------------------------------
+
+PLEASE ASK maverick_magic14 (A.K.A Nex.Mav) for permission 
+ before using any of our products
