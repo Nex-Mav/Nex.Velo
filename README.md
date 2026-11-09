@@ -12,7 +12,7 @@ PROXY USED: Scramjet
 
 MUSIC LIBRARY: SoundCloud, Youtube Music, Audius
 
-MOVIES: (not confirmed)
+ENTERTAINMENT: (not confirmed)
 
 GAMES: Duckmath, Weslack + GN math, Ultimate Game Stash, Obsidianig
 
