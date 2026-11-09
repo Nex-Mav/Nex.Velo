@@ -10,10 +10,12 @@
   const style = document.createElement("style");
   style.textContent = `
 .tl-wrap{max-width:46rem;margin:0 auto}
-.tl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(11rem,1fr));gap:.75rem;max-width:62rem;margin:0 auto}
-.tl-tile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.5rem;padding:1.125rem 1rem;border-radius:1rem;text-align:center;min-width:0}
+.tl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(10rem,1fr));gap:.75rem;max-width:62rem;margin:0 auto}
+.tl-tile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.5rem;box-sizing:border-box;width:100%;height:auto;min-height:7.75rem;padding:1.125rem .875rem;border:0;border-radius:1rem;background:var(--btn);color:inherit;font:inherit;text-align:center;min-width:0;white-space:normal;overflow:hidden;transition:transform .2s cubic-bezier(.34,1.5,.5,1),background .2s}
+.tl-tile:hover{background:var(--btn-h)}.tl-tile:active{transform:scale(.97)}
+.tl-tile b,.tl-tile small{display:block;max-width:100%;overflow-wrap:anywhere;word-break:break-word}
 .tl-tile svg{width:1.5rem;height:1.5rem;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
-.tl-tile b{font-weight:500;font-size:.875rem}
+.tl-tile b{font-weight:500;font-size:.875rem;line-height:1.25}
 .tl-tile small{font-size:.6875rem;color:var(--dim);line-height:1.35}
 .tl-card{display:flex;flex-direction:column;gap:1rem;padding-bottom:2rem;text-align:center}
 .tl-card .switch,.tl-card .tl-row,.tl-card .tl-pre,.tl-card .chk,.tl-card textarea{text-align:left}
@@ -24,6 +26,11 @@
 #tl-home .ghead input{width:min(22rem,100%)}
 #tl-view .ghead{position:relative;justify-content:flex-start}
 #tl-title{position:absolute;left:0;right:0;text-align:center;pointer-events:none;font-weight:500}
+.ck-combo{position:relative;text-align:left}
+.ck-list{position:absolute;left:0;right:0;top:calc(100% + .25rem);z-index:30;max-height:15rem;overflow:auto;padding:.25rem;border-radius:.875rem;background:var(--card);box-shadow:0 14px 36px rgba(0,0,0,.42),0 0 0 1px color-mix(in srgb,var(--fg) 14%,transparent);overscroll-behavior:contain}
+.ck-opt{display:flex;justify-content:space-between;gap:.75rem;align-items:center;padding:.4375rem .625rem;border-radius:.5rem;font-size:.8125rem;cursor:pointer}
+.ck-opt small{opacity:.65;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ck-opt.on{background:var(--accent);color:var(--accent-fg)}.ck-none{padding:.625rem;font-size:.8125rem;color:var(--dim)}
 .ck-row .ck-name{flex:1;min-width:0;text-align:left}.ck-row .ck-sub{display:block;font-size:.6875rem;color:var(--dim)}.ck-row .ck-t{font-size:1.125rem;font-variant-numeric:tabular-nums;flex:none}
 .tl-out{display:flex;gap:.75rem;align-items:center;padding:.875rem 1rem;border-radius:.875rem;background:var(--btn)}
 .tl-out>div{flex:1;min-width:0}
@@ -98,25 +105,70 @@ textarea.tl-ta:focus,.tl-in:focus{box-shadow:0 0 0 2px var(--focus)}
   const allZones = () => { try { return Intl.supportedValuesOf("timeZone"); } catch { return []; } };
   const validTz = (tz) => { try { new Intl.DateTimeFormat(undefined, { timeZone: tz }); return true; } catch { return false; } };
 
+
+  // A box you can type in, or scroll through. Typing finds the closest match first (names, countries, nicknames, even small typos).
+  const ALIASES = { "America/New_York": "usa us america eastern est edt nyc", "America/Chicago": "usa us america central cst", "America/Denver": "usa us america mountain mst", "America/Los_Angeles": "usa us america pacific pst la california", "Europe/London": "uk england britain great britain gmt", "Asia/Dubai": "uae emirates", "Asia/Seoul": "korea south korea", "Asia/Ho_Chi_Minh": "saigon vietnam", "Asia/Kolkata": "india calcutta ist delhi mumbai", "Asia/Shanghai": "china beijing", "Europe/Moscow": "russia", "Pacific/Auckland": "nz new zealand", "Australia/Sydney": "aus melbourne", "UTC": "utc gmt zulu universal" };
+  const norm = (t) => String(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+  const lev = (a, b) => { const m = a.length, n = b.length; if (Math.abs(m - n) > 2) return 9; let prev = Array.from({ length: n + 1 }, (_, j) => j); for (let i = 1; i <= m; i++) { const cur = [i]; for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = cur; } return prev[n]; };
+  function score(q, c) { // higher is a closer match
+    if (!q) return 0;
+    const text = c.text, words = text.split(" ");
+    if (norm(c.label) === q) return 100;
+    let best = 0;
+    if (text.startsWith(q)) best = 92;
+    else if (words.some((w) => w.startsWith(q))) best = 84 - Math.min(10, words.findIndex((w) => w.startsWith(q)) * 2);
+    else if (text.includes(q)) best = 66;
+    else {
+      const span = (str) => { let i = 0, first = -1, last = -1; for (let k = 0; k < str.length && i < q.length; k++) if (str[k] === q[i]) { if (first < 0) first = k; last = k; i++; } return i === q.length ? last - first + 1 : -1; };
+      for (const w of words) { const sp = span(w); if (sp > 0) best = Math.max(best, 60 - (sp - q.length) * 3 - Math.max(0, w.length - sp)); } // the letters appear in order inside one word, like "tkyo" in "tokyo"
+      const sp = span(text); if (sp > 0) best = Math.max(best, 44 - Math.min(20, sp - q.length));
+    }
+    for (const w of words) { const d = lev(q, w.slice(0, Math.max(q.length, 1))); if (d <= 2 && q.length > 2) best = Math.max(best, 40 - d * 8); }
+    return best;
+  }
+  const offCache = new Map();
+  function makeCombo(host, { candidates, current, placeholder, onPick, clearOnPick, offsetOf }) {
+    host.innerHTML = '<input class="tl-in" type="text" spellcheck="false" autocomplete="off" role="combobox" aria-expanded="false"><div class="ck-list" role="listbox" hidden></div>';
+    const input = host.querySelector("input"), list = host.querySelector(".ck-list");
+    input.placeholder = placeholder || ""; const items = candidates.map((c) => ({ ...c, text: norm(c.label + " " + c.tz + " " + (ALIASES[c.tz] || "")) }));
+    let shown = [], sel = 0, picked = current;
+    const labelOf = (tz) => (items.find((c) => c.tz === tz) || { label: tz }).label;
+    const setText = () => { input.value = clearOnPick ? "" : labelOf(picked); };
+    function render() {
+      const q = norm(input.value === labelOf(picked) && !clearOnPick ? "" : input.value);
+      shown = q ? items.map((c) => ({ c, s: score(q, c) })).filter((x) => x.s > 0).sort((a, b) => b.s - a.s).slice(0, 60).map((x) => x.c) : items;
+      sel = Math.min(sel, Math.max(0, shown.length - 1));
+      list.innerHTML = shown.length ? shown.map((c, i) => `<div class="ck-opt${i === sel ? " on" : ""}" role="option" data-i="${i}"><span>${esc(c.label)}</span><small>${esc(offsetOf ? offsetOf(c.tz) : "")}</small></div>`).join("") : '<div class="ck-none">no match. try another spelling.</div>';
+    }
+    const open = () => { list.hidden = false; input.setAttribute("aria-expanded", "true"); render(); const on = list.querySelector(".ck-opt.on"); if (on) on.scrollIntoView({ block: "nearest" }); };
+    const close = () => { list.hidden = true; input.setAttribute("aria-expanded", "false"); setText(); };
+    const choose = (i) => { const c = shown[i]; if (!c) return; picked = c.tz; list.hidden = true; input.setAttribute("aria-expanded", "false"); setText(); input.blur(); onPick(c.tz); };
+    input.addEventListener("focus", () => { input.select(); sel = Math.max(0, items.findIndex((c) => c.tz === picked)); if (clearOnPick) sel = 0; open(); });
+    input.addEventListener("input", () => { sel = 0; open(); list.scrollTop = 0; });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); if (list.hidden) open(); else { sel = (sel + (e.key === "ArrowDown" ? 1 : -1) + shown.length) % Math.max(1, shown.length); render(); const on = list.querySelector(".ck-opt.on"); if (on) on.scrollIntoView({ block: "nearest" }); } }
+      else if (e.key === "Enter") { e.preventDefault(); choose(sel); }
+      else if (e.key === "Escape") { close(); input.blur(); }
+    });
+    list.addEventListener("pointerdown", (e) => { e.preventDefault(); const o = e.target.closest("[data-i]"); if (o) choose(+o.dataset.i); }); // pointerdown, so the box doesn't close before the click lands
+    input.addEventListener("blur", () => setTimeout(close, 120));
+    setText();
+    return { set(tz) { picked = tz; setText(); } };
+  }
+
   function mountClock(root, own) {
     const store = (k, d) => { try { return JSON.parse(NV.LS.get("nexvelo.clock." + k, "null")) ?? d; } catch { return d; } };
     const put = (k, v) => NV.LS.set("nexvelo.clock." + k, JSON.stringify(v));
     let main = store("main", "local"), list = store("list", ["America/New_York", "Europe/London", "Asia/Tokyo"]).filter(validTz), h24 = store("h24", NV.settings.h24 !== false);
     if (main !== "local" && !validTz(main)) main = "local";
     const ticks = Array.from({ length: 12 }, (_, i) => `<line x1="50" y1="6" x2="50" y2="${i % 3 ? 9.5 : 12}" transform="rotate(${i * 30} 50 50)" stroke="var(--fg)" stroke-width="${i % 3 ? .8 : 1.6}" opacity=".55"/>`).join("");
-    const options = (withLocal, selected) => {
-      const known = new Set(ZONES.map((z) => z[1]));
-      return (withLocal ? `<option value="local"${selected === "local" ? " selected" : ""}>${esc(zoneLabel("local"))}</option>` : "") +
-        `<optgroup label="countries and cities">${ZONES.map(([l, z]) => `<option value="${z}"${selected === z ? " selected" : ""}>${esc(l)}</option>`).join("")}</optgroup>` +
-        `<optgroup label="every time zone">${allZones().filter((z) => !known.has(z)).map((z) => `<option value="${z}"${selected === z ? " selected" : ""}>${esc(z.replace(/_/g, " "))}</option>`).join("")}</optgroup>`;
-    };
     root.innerHTML = `<div class="tl-card">
 <svg viewBox="0 0 100 100" width="168" height="168" role="img" aria-label="Analog clock" style="align-self:center"><circle cx="50" cy="50" r="47" fill="var(--btn)" stroke="color-mix(in srgb,var(--fg) 22%,transparent)"/>${ticks}
 <line id="ck-h" x1="50" y1="50" x2="50" y2="29" stroke="var(--fg)" stroke-width="3.2" stroke-linecap="round"/><line id="ck-m" x1="50" y1="50" x2="50" y2="17" stroke="var(--fg)" stroke-width="2.2" stroke-linecap="round"/><line id="ck-s" x1="50" y1="56" x2="50" y2="12" stroke="var(--accent)" stroke-width="1" stroke-linecap="round"/><circle cx="50" cy="50" r="2.6" fill="var(--accent)"/></svg>
 <div><div class="tl-big" id="ck-time"></div><div id="ck-date" style="margin-top:.25rem"></div><small id="ck-diff" style="color:var(--dim)"></small></div>
-<label class="fld"><span>show the time in</span><select class="tl-in" id="ck-main">${options(true, main)}</select></label>
+<div class="fld"><span>show the time in</span><div class="ck-combo" id="ck-main"></div></div>
 <div>${toggle("ck-24", "24-hour clock", "", h24)}</div>
-<label class="fld"><span>add another country or city</span><select class="tl-in" id="ck-add"><option value="">choose a place…</option>${options(false, "")}</select></label>
+<div class="fld"><span>add another country or city</span><div class="ck-combo" id="ck-add"></div></div>
 <div class="tl-rows" id="ck-list"></div></div>`;
     const q = (s) => root.querySelector(s);
     const dtf = (tz, o) => new Intl.DateTimeFormat(undefined, { timeZone: tz === "local" ? undefined : tz, ...o });
@@ -139,10 +191,13 @@ textarea.tl-ta:focus,.tl-in:focus{box-shadow:0 0 0 2px var(--focus)}
       q("#ck-diff").textContent = zoneLabel(main) + " · " + utcLabel(d, main) + (main === "local" ? "" : " · " + diffText(d, main));
       q("#ck-list").innerHTML = list.map((tz, i) => `<div class="tl-row ck-row"><div class="ck-name"><b style="font-weight:500">${esc(zoneLabel(tz))}</b><span class="ck-sub">${esc(dtf(tz, { weekday: "short", day: "numeric", month: "short" }).format(d))} · ${esc(utcLabel(d, tz))} · ${esc(diffText(d, tz))}</span></div><code class="ck-t">${esc(hm(d, tz, false))}</code><button class="btn" type="button" data-rm="${i}" aria-label="Remove ${esc(zoneLabel(tz))}">remove</button></div>`).join("") || '<small style="color:var(--dim)">no other places yet. pick one above.</small>';
     }
-    q("#ck-main").addEventListener("change", (e) => { main = e.target.value; put("main", main); paint(); });
     q("#ck-24").addEventListener("change", (e) => { h24 = e.target.checked; put("h24", h24); paint(); });
-    q("#ck-add").addEventListener("change", (e) => { const z = e.target.value; e.target.value = ""; if (z && !list.includes(z)) { list.push(z); put("list", list); paint(); } });
     q("#ck-list").addEventListener("click", (e) => { const b = e.target.closest("[data-rm]"); if (b) { list.splice(+b.dataset.rm, 1); put("list", list); paint(); } });
+    const known = new Set(ZONES.map((z) => z[1]));
+    const everyZone = [...ZONES.map(([label, tz]) => ({ label, tz })), ...allZones().filter((z) => !known.has(z)).map((z) => ({ label: z.replace(/_/g, " "), tz: z }))];
+    const offsetOf = (tz) => { const k = tz + ":" + Math.floor(Date.now() / 60000); if (!offCache.has(k)) { if (offCache.size > 2000) offCache.clear(); offCache.set(k, utcLabel(new Date(), tz)); } return offCache.get(k); };
+    makeCombo(q("#ck-main"), { candidates: [{ label: zoneLabel("local"), tz: "local" }, ...everyZone], current: main, placeholder: "type a country or city, or scroll", offsetOf, onPick: (tz) => { main = tz; put("main", main); paint(); } });
+    makeCombo(q("#ck-add"), { candidates: everyZone, current: "", clearOnPick: true, placeholder: "type a country or city, or scroll", offsetOf, onPick: (tz) => { if (!list.includes(tz)) { list.push(tz); put("list", list); paint(); } } });
     paint(); const id = setInterval(paint, 500); own.push(() => clearInterval(id));
   }
 
@@ -476,7 +531,7 @@ textarea.tl-ta:focus,.tl-in:focus{box-shadow:0 0 0 2px var(--focus)}
   function paintGrid() {
     const f = $("#tl-q").value.trim().toLowerCase();
     const list = TOOLS.filter((t) => !f || (t.name + " " + t.desc).includes(f));
-    $("#tl-grid").innerHTML = list.map((t) => `<button class="tl-tile btn" data-id="${t.id}"><svg viewBox="0 0 24 24">${IC[t.ic]}</svg><b>${esc(t.name)}</b><small>${esc(t.desc)}</small></button>`).join("");
+    $("#tl-grid").innerHTML = list.map((t) => `<button class="tl-tile" data-id="${t.id}" type="button"><svg viewBox="0 0 24 24">${IC[t.ic]}</svg><b>${esc(t.name)}</b><small>${esc(t.desc)}</small></button>`).join("");
     $("#tl-none").hidden = !!list.length; $("#tl-count").textContent = list.length + " tool" + (list.length === 1 ? "" : "s");
   }
   function leave() { cleanup.forEach((f) => { try { f(); } catch {} }); cleanup = []; curTool = ""; $("#tl-body").innerHTML = ""; $("#tl-view").hidden = true; $("#tl-home").hidden = false; NV.syncChrome(); }
