@@ -12,6 +12,23 @@ const LS = {
 };
 const VERSION = "1.00.0";
 
+// Installing Nex.Velo as an app (the browser offers this when the site qualifies)
+const INSTALL = { evt: null };
+addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); INSTALL.evt = e; if (window.NV && NV.onInstallChange) NV.onInstallChange(); });
+addEventListener("appinstalled", () => { INSTALL.evt = null; if (window.NV && NV.toast) NV.toast("Nex.Velo is installed"); if (window.NV && NV.onInstallChange) NV.onInstallChange(); });
+const standalone = () => matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+const install = {
+  can: () => !!INSTALL.evt, standalone,
+  async prompt() { if (!INSTALL.evt) return "unavailable"; const e = INSTALL.evt; INSTALL.evt = null; e.prompt(); try { return (await e.userChoice).outcome; } catch { return "dismissed"; } },
+  help() {
+    const ua = navigator.userAgent;
+    return standalone() ? "Nex.Velo is already running as an app." : /iPhone|iPad|iPod/i.test(ua) ? "In Safari: tap Share, then Add to Home Screen."
+      : /Firefox/i.test(ua) ? "Firefox can't install web apps on a computer. In Chrome, Edge or Brave, open the menu and choose Install Nex.Velo."
+      : "Open your browser's menu (the three dots) and choose Install Nex.Velo (or Cast, save and share, then Install page as app). If it isn't listed, reload this page once and try again.";
+  },
+};
+try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch {} // asks the browser not to clear saved logins and settings when it is short on space
+
 // small icons of our own (used instead of text symbols)
 const ICON_X = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 const ICON_EDIT = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4-1 11-11-3-3L5 16z"/></svg>';
@@ -35,15 +52,24 @@ window.fetch = (u, o) => (typeof u === "string" && u.startsWith("/api/") ? apiRe
 
 /* ================= Settings ================= */
 const defaultWisp = "wss://nex-velo.up.railway.app/wisp/"; // the Nex.Velo server, always available as the default
+// Choices made in the setup with "remember" turned off live in sessionStorage only. They travel into a cloaked tab as ?nvs=…
+try {
+  const q = new URLSearchParams(location.search), v = q.get("nvs");
+  if (v) { sessionStorage.setItem("nexvelo.session", new TextDecoder().decode(Uint8Array.from(atob(v), (c) => c.charCodeAt(0)))); q.delete("nvs"); history.replaceState(null, "", location.pathname + (q.toString() ? "?" + q : "") + location.hash); }
+} catch {}
 const settings = {
   wisp: defaultWisp, engine: "https://duckduckgo.com/?q=%s", adblock: true,
   theme: "bubblegum", wall: "aurora", wallUrl: "", blur: true, blurAmt: 14, font: "",
   clock: true, h24: true, music: true, games: true, movies: true, tools: true, ai: true, name: "",
-  launch: "ask", launchRedirect: true, wispAuto: true, mode: "normal",
+  launch: "here", launchRedirect: true, wispAuto: true, mode: "normal", chat: true,
   custom: { bg: "#14161a", fg: "#f2f2f2", accent: "#8ab4ff", clock: "", bar: "", font: "jetbrains", size: 100 },
   panicOn: true, panicKey: "F9", panicSite: "classroom", panicUrl: "", panicMode: "replace",
 };
-try { Object.assign(settings, JSON.parse(LS.get("nexvelo.settings", "{}"))); } catch {}
+const persisted = (() => { try { return JSON.parse(LS.get("nexvelo.settings", "{}")) || {}; } catch { return {}; } })();
+Object.assign(settings, persisted);
+let sessionOnly = {}; try { sessionOnly = JSON.parse(sessionStorage.getItem("nexvelo.session") || "{}") || {}; } catch {}
+Object.assign(settings, sessionOnly);
+if (settings.launch === "ask") settings.launch = "here"; // the old "ask every time" mode is gone
 if (LS.get("nexvelo.settings") == null) { // carry over values saved by the first version
   const w = LS.get("nexus.wisp"), e = LS.get("nexus.engine"), a = LS.get("nexus.adblock");
   if (w) settings.wisp = w;
@@ -61,17 +87,22 @@ const PANIC_SITES = {
   else if (!saved.panicSite && saved.panicUrl) settings.panicSite = Object.keys(PANIC_SITES).find((k) => PANIC_SITES[k] === saved.panicUrl) || "classroom";
 }
 const panicDest = () => (settings.panicSite === "custom" ? settings.panicUrl : PANIC_SITES[settings.panicSite]) || PANIC_SITES.classroom;
-const save = () => LS.set("nexvelo.settings", JSON.stringify(settings));
+// Settings that were chosen for this visit only are never written to the saved settings.
+const save = () => { const out = { ...settings }; for (const k of Object.keys(sessionOnly)) { if (k in persisted) out[k] = persisted[k]; else delete out[k]; } LS.set("nexvelo.settings", JSON.stringify(out)); };
 
 /* ================= Banner (shows what is wrong instead of a blank page) ================= */
 // With repair set, the banner also gets a "repair" button that resets the proxy (see "Proxy self-repair" below).
-function showBanner(msg, repair) {
+function showBanner(msg, repair, kind, action) {
   const b = $("#banner"); if (!b) return;
-  b.innerHTML = `<span>${esc(msg)}</span>${repair ? '<button type="button" data-repair style="width:auto;padding:0 .625rem;border-radius:.75rem;font-size:.75rem">repair</button>' : ""}<button type="button" data-x aria-label="Dismiss">${ICON_X}</button>`;
+  b.dataset.kind = kind || "";
+  const btn = (attr, label) => `<button type="button" ${attr} style="width:auto;padding:0 .625rem;border-radius:.75rem;font-size:.75rem">${esc(label)}</button>`;
+  b.innerHTML = `<span>${esc(msg)}</span>${repair ? btn("data-repair", "repair") : ""}${action ? btn("data-action", action.label) : ""}<button type="button" data-x aria-label="Dismiss">${ICON_X}</button>`;
   b.hidden = false;
   $("[data-x]", b).onclick = () => { b.hidden = true; };
   const r = $("[data-repair]", b); if (r) r.onclick = () => repairProxy(true);
+  const ac = $("[data-action]", b); if (ac) ac.onclick = () => { b.hidden = true; action.run(); };
 }
+const hideBanner = (kind) => { const b = $("#banner"); if (b && !b.hidden && (!kind || b.dataset.kind === kind)) b.hidden = true; };
 addEventListener("error", (e) => { // a script that couldn't be loaded at all (missing file)
   const t = e.target; if (t && t.tagName === "SCRIPT") showBanner("couldn't load " + (t.getAttribute("src") || "a file").split("?")[0] + ". upload it to the public folder and refresh.");
 }, true);
@@ -114,16 +145,26 @@ const connection = new BareMux.BareMuxConnection("/baremux/worker.js");
 let activeWisp = settings.wisp; // the server in use right now (may differ from the saved one if that one is down)
 const applyTransport = () => connection.setTransport("/libcurl/index.mjs", [{ wisp: activeWisp, websocket: activeWisp }]);
 
+// Checked in the background, so loading pages never waits for it. A server that is slow to answer (it may be waking up) gets several
+// patient tries before anything is said, and the message never claims that sites "won't load" (they usually do).
+let wispOk = false;
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 async function pickWisp() {
   if (settings.wispAuto === false) return;
   const sameHost = (location.protocol === "https:" ? "wss" : "ws") + "://" + location.host + "/wisp/";
-  for (const u of [...new Set([settings.wisp, defaultWisp, sameHost])]) {
-    if (await testWisp(u, 4500)) {
-      if (u !== settings.wisp) { activeWisp = u; toast("your Wisp server wasn't reachable, using " + new URL(u).host + " instead"); }
-      return;
+  const list = [...new Set([settings.wisp, defaultWisp, sameHost])];
+  for (let round = 0; round < 3 && !wispOk; round++) {
+    for (const u of list) {
+      if (wispOk) return;
+      if (await testWisp(u, 9000)) {
+        wispOk = true; hideBanner("wisp");
+        if (u !== activeWisp && u !== settings.wisp) { activeWisp = u; try { await applyTransport(); } catch {} toast("your Wisp server didn't answer, so " + new URL(u).host + " is being used instead"); }
+        return;
+      }
     }
+    await wait(2500);
   }
-  showBanner("no Wisp server could be reached, so sites won't load. open Settings → servers and add one that is running.");
+  if (!wispOk) showBanner("couldn't confirm that the Wisp server is answering. pages may still load.", false, "wisp", { label: "check again", run: () => { wispOk = false; pickWisp(); } });
 }
 
 async function pushAdblock() {
@@ -195,9 +236,9 @@ const ready = (async () => {
       new Promise((r) => setTimeout(r, 4000)),
     ]);
   }
-  await pickWisp();
   await applyTransport();
   await pushAdblock();
+  pickWisp();
 })();
 ready.catch((e) => console.error("Proxy setup failed:", e));
 
@@ -212,10 +253,11 @@ function tickClock() {
   const hello = greet(h) + (settings.name ? `, ${settings.name.toLowerCase()}` : "");
   $("#bar-clock").textContent = `${hh}:${String(d.getMinutes()).padStart(2, "0")}`;
   for (const el of $$(".clock")) {
+    const h = $(".h", el), m = $(".m", el), g = $(".g", el);
+    if (!h || !m || !g) continue; // not a home-page clock: leave it alone (one odd element must never stop the others)
     el.hidden = !settings.clock;
-    $(".h", el).textContent = hh;
-    $(".m", el).textContent = String(d.getMinutes()).padStart(2, "0");
-    $(".g", el).innerHTML = `<b>${esc(hello)}</b> · ${esc(date)}`;
+    h.textContent = hh; m.textContent = String(d.getMinutes()).padStart(2, "0");
+    g.innerHTML = `<b>${esc(hello)}</b> · ${esc(date)}`;
   }
 }
 setInterval(tickClock, 1000);
@@ -302,6 +344,37 @@ body.nv-live #desktop{background:transparent!important}
 @media (prefers-reduced-transparency:reduce){body.nv-live .page,html[data-pop] body.nv-live .page{background:var(--panel);-webkit-backdrop-filter:none;backdrop-filter:none}}
 ` }));
 
+// Liquid-glass controls: switches, sliders and segmented tabs with glass thumbs that lift into a lens when pressed (in the style of Glisse).
+document.head.appendChild(Object.assign(document.createElement("style"), { id: "nv-glass", textContent: `
+html .switch input[type=checkbox]{-webkit-appearance:none;appearance:none;position:relative;flex:none;width:3.5rem;height:2.125rem;margin:0;border:0;border-radius:999px;cursor:pointer;background:color-mix(in srgb,var(--fg) 16%,transparent);box-shadow:inset 0 1px 3px rgba(0,0,0,.25),inset 0 0 0 1px color-mix(in srgb,var(--fg) 8%,transparent);transition:background .3s ease,box-shadow .3s ease}
+html .switch input[type=checkbox]::after{content:none}
+html .switch input[type=checkbox]::before{content:"";position:absolute;top:.25rem;left:.25rem;width:2.25rem;height:1.625rem;border-radius:999px;background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(238,238,244,.92));box-shadow:0 2px 6px rgba(0,0,0,.28),0 0 0 .5px rgba(0,0,0,.08),inset 0 1px 1px #fff,inset 0 -2px 3px rgba(0,0,0,.07);transition:transform .38s cubic-bezier(.34,1.5,.5,1),width .22s ease,background .22s ease,box-shadow .22s ease}
+html .switch input[type=checkbox]:checked{background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 92%,#fff),var(--accent2,var(--accent)))}
+html .switch input[type=checkbox]:checked::before{transform:translateX(.75rem)}
+html .switch input[type=checkbox]:active::before{width:2.6rem;background:rgba(255,255,255,.4);-webkit-backdrop-filter:blur(2px) saturate(1.9) brightness(1.12);backdrop-filter:blur(2px) saturate(1.9) brightness(1.12);box-shadow:0 6px 16px rgba(0,0,0,.3),inset 0 0 0 1.5px rgba(255,255,255,.75),inset 0 1px 1px #fff}
+html .switch input[type=checkbox]:checked:active::before{transform:translateX(.4rem)}
+html .switch input[type=checkbox]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+html input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:1.75rem;margin:0;background:transparent;cursor:pointer;--p:50%}
+html input[type=range]:focus{outline:none}
+html input[type=range]::-webkit-slider-runnable-track{height:.375rem;border-radius:999px;background:linear-gradient(90deg,var(--accent) var(--p),color-mix(in srgb,var(--fg) 18%,transparent) var(--p))}
+html input[type=range]::-moz-range-track{height:.375rem;border-radius:999px;background:color-mix(in srgb,var(--fg) 18%,transparent)}
+html input[type=range]::-moz-range-progress{height:.375rem;border-radius:999px;background:var(--accent)}
+html input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:2.125rem;height:1.5rem;margin-top:-.5625rem;border-radius:999px;border:0;background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(238,238,244,.92));box-shadow:0 2px 6px rgba(0,0,0,.3),0 0 0 .5px rgba(0,0,0,.08),inset 0 1px 1px #fff,inset 0 -2px 3px rgba(0,0,0,.07);transition:transform .3s cubic-bezier(.34,1.5,.5,1),background .2s,box-shadow .2s}
+html input[type=range]::-moz-range-thumb{width:2.125rem;height:1.5rem;border-radius:999px;border:0;background:#f4f4f8;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+html input[type=range]:active::-webkit-slider-thumb{transform:scale(1.2);background:rgba(255,255,255,.45);-webkit-backdrop-filter:blur(2px) saturate(1.9) brightness(1.12);backdrop-filter:blur(2px) saturate(1.9) brightness(1.12);box-shadow:0 6px 16px rgba(0,0,0,.3),inset 0 0 0 1.5px rgba(255,255,255,.75),inset 0 1px 1px #fff}
+html input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 60%,transparent),0 2px 6px rgba(0,0,0,.3)}
+html .mtabs{border-radius:999px;padding:.1875rem;background:color-mix(in srgb,var(--fg) 10%,transparent)}
+html .mtabs button{border-radius:999px;transition:background .25s ease,box-shadow .25s ease,transform .15s ease}
+html .mtabs button:active{transform:scale(.96)}
+html .mtabs button.on{background:color-mix(in srgb,var(--fg) 16%,transparent);-webkit-backdrop-filter:blur(8px) saturate(1.6);backdrop-filter:blur(8px) saturate(1.6);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),inset 0 0 0 1px color-mix(in srgb,var(--fg) 14%,transparent),0 2px 8px rgba(0,0,0,.18)}
+@media (prefers-reduced-motion:reduce){html .switch input[type=checkbox],html .switch input[type=checkbox]::before,html input[type=range]::-webkit-slider-thumb,html .mtabs button{transition:none}}
+` }));
+// A slider's filled part follows its value
+const syncRange = (el) => { const min = +el.min || 0, max = el.max === "" ? 100 : +el.max, span = max - min || 1; el.style.setProperty("--p", Math.max(0, Math.min(100, ((+el.value - min) / span) * 100)) + "%"); };
+const syncRanges = () => document.querySelectorAll("input[type=range]").forEach(syncRange);
+document.addEventListener("input", (e) => { if (e.target && e.target.type === "range") syncRange(e.target); });
+setInterval(syncRanges, 400); // also catches sliders that move by themselves (like a progress bar)
+
 function applyTheme(animate) {
   const root = document.documentElement, pop = POP[settings.theme], pal = pop || (settings.theme === "custom" ? settings.custom : null);
   if (animate) { root.classList.add("nv-fade"); clearTimeout(applyTheme.t); applyTheme.t = setTimeout(() => root.classList.remove("nv-fade"), 650); } // colours glide from one theme to the next
@@ -365,7 +438,7 @@ function panicHandler(e) {
 addEventListener("keydown", panicHandler, true);
 
 /* ================= URL handling ================= */
-const ALIAS = /^(?:https?:\/\/)?nex\.?velo(?:\/(?:games|music|ai|settings|servers|entertainment|tools|movies)(?:\/[a-z0-9-]+)?)?\/?$/i;
+const ALIAS = /^(?:https?:\/\/)?nex\.?velo(?:\/(?:games|music|ai|settings|servers|entertainment|tools|movies|chat)(?:\/[a-z0-9-]+)?)?\/?$/i;
 function resolve(raw) {
   const v = raw.trim();
   if (!v) return null;
@@ -441,7 +514,7 @@ const tabs = [];
 let active = null, uid = 0, restoring = false;
 // Entertainment and Tools are built by entertainment.js and tools.js. Their empty pages are made here so saved tabs can come back before those files finish loading.
 const makePage = (id) => { let n = $("#" + id); if (!n) { n = document.createElement("section"); n.className = "page"; n.id = id; n.innerHTML = '<div class="msg" style="padding:2rem">loading…</div>'; $("#pages").appendChild(n); } return n; };
-const PAGES = { settings: $("#page-settings"), music: $("#page-music"), ai: $("#page-ai"), games: $("#page-games"), entertainment: makePage("page-entertainment"), tools: makePage("page-tools") };
+const PAGES = { settings: $("#page-settings"), music: $("#page-music"), ai: $("#page-ai"), games: $("#page-games"), entertainment: makePage("page-entertainment"), tools: makePage("page-tools"), chat: makePage("page-chat") };
 const X_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 const isHome = (t) => t.kind === "web" && !t.frame;
 
@@ -479,6 +552,7 @@ function newTab(opts = {}) {
   if (kind === "games" && NV.onGamesOpen) NV.onGamesOpen();
   if (kind === "entertainment" && NV.onEntOpen) NV.onEntOpen();
   if (kind === "tools" && NV.onToolsOpen) NV.onToolsOpen();
+  if (kind === "chat" && NV.onChatOpen) NV.onChatOpen();
   if (opts.url && !opts.lazy) go(t, opts.url);
   else if (kind === "web" && !opts.lazy) t.input.focus({ preventScroll: true });
   return t;
@@ -488,7 +562,7 @@ const paintChip = (t) => { $(".t", t.chip).textContent = t.title; t.chip.title =
 
 function select(t) {
   active = t;
-  for (const x of tabs) { const on = x === t || x.windowed; x.view.classList.toggle("active", on); x.chip.setAttribute("aria-selected", x === t); } // windows are all visible at once
+  for (const x of tabs) { const on = x === t || !!x.windowed; x.view.classList.toggle("active", on); x.chip.setAttribute("aria-selected", x === t); } // windows are all visible at once
   if (!t.windowed) t.chip.scrollIntoView({ inline: "nearest", block: "nearest" });
   if (t.pendingUrl && !restoring) { const u = t.pendingUrl; t.pendingUrl = null; go(t, u); }
   syncChrome(); saveTabs();
@@ -520,7 +594,7 @@ function openPage(kind) {
 }
 
 /* ----- addresses like Nex.Velo/Music/Playlists: shown in the address bar, and typed to jump straight there ----- */
-const KIND_LABEL = { music: "Music", games: "Games", entertainment: "Entertainment", tools: "Tools", ai: "AI", settings: "Settings" };
+const KIND_LABEL = { music: "Music", games: "Games", entertainment: "Entertainment", tools: "Tools", chat: "Chat", ai: "AI", settings: "Settings" };
 const titleSlug = (s) => ({ ugs: "UGS", "gn-math": "GN-Math" }[s] || s.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join("-"));
 function currentSub(kind) {
   if (kind === "music") return $("#page-music .mtabs .on")?.dataset.mt || "";
@@ -574,7 +648,7 @@ async function go(t, raw) {
       try { t.frame.frame.contentWindow.addEventListener("keydown", panicHandler, true); } catch {}
       let blank = false; try { blank = t.frame.frame.contentWindow.location.href === "about:blank"; } catch {}
       if (t.loading && !blank) { t.loading = false; t.loader.target = 100; }
-      if (!blank) { clearTimeout(t.stallTimer); watchBlank(t); } // a loaded page that stays empty means the proxy is out of date
+      if (!blank) { clearTimeout(t.stallTimer); watchBlank(t); wispOk = true; hideBanner("wisp"); } // a page loaded through the proxy: the server works // a loaded page that stays empty means the proxy is out of date
       syncTab(t);
     });
   }
@@ -781,7 +855,7 @@ function loadSettingsUI() {
   $("#wisp-url").value = settings.wisp; $("#engine").value = settings.engine;
   $("#adblock").checked = settings.adblock; $("#clock").checked = settings.clock; $("#h24").checked = settings.h24;
   $("#blur").checked = settings.blur; $("#blur-amt").value = settings.blurAmt; $("#wall-url").value = settings.wallUrl;
-  $("#wisp-auto").checked = settings.wispAuto !== false; $("#launch-mode").value = settings.launch; $("#launch-redirect").checked = settings.launchRedirect; $("#panic-on").checked = settings.panicOn; $("#panic-key").textContent = settings.panicKey; $("#panic-site").value = settings.panicSite; $("#panic-url").value = settings.panicUrl; $("#panic-url-fld").hidden = settings.panicSite !== "custom"; $("#panic-mode").value = settings.panicMode; $("#music-on").checked = settings.music; $("#games-on").checked = settings.games; $("#movies-on").checked = settings.movies; if ($("#tools-on")) $("#tools-on").checked = settings.tools; $("#ai-on").checked = settings.ai; $("#name").value = settings.name;
+  $("#wisp-auto").checked = settings.wispAuto !== false; $("#launch-mode").value = settings.launch; $("#launch-redirect").checked = settings.launchRedirect; $("#panic-on").checked = settings.panicOn; $("#panic-key").textContent = settings.panicKey; $("#panic-site").value = settings.panicSite; $("#panic-url").value = settings.panicUrl; $("#panic-url-fld").hidden = settings.panicSite !== "custom"; $("#panic-mode").value = settings.panicMode; $("#music-on").checked = settings.music; $("#games-on").checked = settings.games; $("#movies-on").checked = settings.movies; if ($("#tools-on")) $("#tools-on").checked = settings.tools; if ($("#chat-on")) $("#chat-on").checked = settings.chat !== false; $("#ai-on").checked = settings.ai; $("#name").value = settings.name;
   buildAppearance(); say("");
   NV.refreshMusicChips && NV.refreshMusicChips();
 }
@@ -807,6 +881,7 @@ $("#wisp-test").addEventListener("click", async () => {
   if (!url) return say("enter a wisp server address.", "bad");
   say("testing connection…");
   const ok = await testWisp(url);
+  if (ok) { wispOk = true; hideBanner("wisp"); }
   say(ok ? "server is reachable." : "couldn't connect. check the address and that it ends in /wisp/.", ok ? "ok" : "bad");
 });
 $("#wisp-default").addEventListener("click", () => { $("#wisp-url").value = defaultWisp; say(""); });
@@ -824,7 +899,7 @@ $("#h24").addEventListener("change", (e) => { settings.h24 = e.target.checked; s
 $("#music-on").addEventListener("change", (e) => { settings.music = e.target.checked; save(); NV.applyMusicToggle && NV.applyMusicToggle(); });
 $("#wisp-auto").addEventListener("change", (e) => { settings.wispAuto = e.target.checked; save(); });
 // the launch mode select offers all four ways to open Nex.Velo, or asking every time
-$("#launch-mode").innerHTML = [["ask", "ask me each time"], ["here", "continue on the main page"], ["blank", "about:blank"], ["blob", "blob cloak"], ["window", "window about:blank"]].map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
+$("#launch-mode").innerHTML = [["here", "continue on the main page"], ["blank", "about:blank"], ["blob", "blob cloak"], ["window", "window about:blank"]].map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
 $("#launch-mode").addEventListener("change", (e) => { settings.launch = e.target.value; save(); });
 $("#launch-redirect").addEventListener("change", (e) => { settings.launchRedirect = e.target.checked; save(); });
 $("#panic-on").addEventListener("change", (e) => { settings.panicOn = e.target.checked; save(); });
@@ -857,6 +932,10 @@ $("#movies-on").addEventListener("change", (e) => { settings.movies = e.target.c
   n.innerHTML = '<div><b>tools</b><small>a password generator, random numbers, word counter, converters and more</small></div><input type="checkbox" id="tools-on">';
   row.after(n); const t = $("#tools-on"); t.checked = settings.tools;
   t.addEventListener("change", (e) => { settings.tools = e.target.checked; save(); });
+  const c = document.createElement("label"); c.className = "switch";
+  c.innerHTML = '<div><b>chat</b><small>Vortex chat, with your sign-in saved on this device</small></div><input type="checkbox" id="chat-on">';
+  n.after(c); const ch = $("#chat-on"); ch.checked = settings.chat !== false;
+  ch.addEventListener("change", (e) => { settings.chat = e.target.checked; save(); });
 })();
 $("#name").addEventListener("input", (e) => { settings.name = e.target.value.trim(); save(); tickClock(); });
 
@@ -882,6 +961,9 @@ $("#imp-file").addEventListener("change", async (e) => {
   const b = document.createElement("button"); b.className = "btn"; b.id = "redo-setup"; b.type = "button"; b.textContent = "change layout and launch mode…";
   b.addEventListener("click", () => (NV.runSetup ? NV.runSetup() : toast("the setup file hasn't loaded yet")));
   reset.before(b);
+  const ib = document.createElement("button"); ib.className = "btn"; ib.id = "install-app"; ib.type = "button"; ib.textContent = "install as an app";
+  ib.addEventListener("click", async () => { if (install.can()) { const r = await install.prompt(); toast(r === "accepted" ? "installing Nex.Velo…" : "install cancelled"); } else showBanner(install.help(), false, "info"); });
+  reset.before(ib);
 })();
 $("#reset").addEventListener("click", () => {
   if (!confirm("reset all settings, playlists and recently played on this browser?")) return;
@@ -893,6 +975,7 @@ const APP_SVG = {
   games: '<svg viewBox="0 0 24 24"><path d="M6 9h12a3 3 0 0 1 3 3.2l-.6 4A2.4 2.4 0 0 1 16 17.3L15 15H9l-1 2.3a2.4 2.4 0 0 1-4.4-1.1l-.6-4A3 3 0 0 1 6 9z"/><path d="M8 11v3M6.5 12.5h3M16 12h.01M18 13.5h.01"/></svg>',
   entertainment: '<svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M17 2l-5 5-5-5"/></svg>',
   tools: '<svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.4 2.4-2.6-.6-.6-2.6z"/></svg>',
+  chat: '<svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>',
   music: '<svg viewBox="0 0 24 24"><path d="M9 18V6l11-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></svg>',
   ai: '<svg viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z"/></svg>',
   servers: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>',
@@ -905,6 +988,7 @@ const APPS = [
   ["music", "Music", () => settings.music, () => openPage("music")],
   ["entertainment", "Entertainment", () => settings.movies, () => openPage("entertainment")],
   ["tools", "Tools", () => settings.tools, () => openPage("tools")],
+  ["chat", "Chat", () => settings.chat !== false, () => openPage("chat")],
   ["ai", "AI", () => settings.ai, () => openPage("ai")],
 ];
 let appsOpen = false, appsTimer = 0;
@@ -975,9 +1059,12 @@ const NV = window.NV = {
   repairProxy: () => repairProxy(true),
   newTab, closeTab, select, go, hist: histTab, reloadTab, homeTab, displayUrl, panicDest, wallSrcNow, desktopMode: false,
   FONTS, loadFont, THEMES, LIVE, applyTheme, applyWall, onLiveReady: () => applyWall(),
+  install, showBanner, hideBanner,
+  setSession: (o) => { Object.assign(sessionOnly, o); try { sessionStorage.setItem("nexvelo.session", JSON.stringify(sessionOnly)); } catch {} },
+  getSession: () => ({ ...sessionOnly }),
 };
 // Entertainment and Tools live in their own files. They are loaded from here so index.html doesn't need to change.
-for (const f of ["entertainment.js", "tools.js", "setup.js"]) {
+for (const f of ["entertainment.js", "tools.js", "chat.js", "setup.js"]) {
   const s = document.createElement("script"); s.src = "/" + f; s.onerror = () => showBanner("couldn't load " + f + ". upload it to the public folder and refresh.");
   document.head.appendChild(s);
 }
@@ -1040,6 +1127,6 @@ async function checkUpdate() {
 setTimeout(checkUpdate, 20000);
 setInterval(checkUpdate, 5 * 60 * 1000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) checkUpdate(); });
-document.addEventListener("change", (e) => { if (/^(music|games|movies|ai|tools)-on$/.test(e.target.id) && NV.onSettingsApps) NV.onSettingsApps(); }); // the desktop dock follows the app switches
+document.addEventListener("change", (e) => { if (/^(music|games|movies|ai|tools|chat)-on$/.test(e.target.id) && NV.onSettingsApps) NV.onSettingsApps(); }); // the desktop dock follows the app switches
 
 })();
