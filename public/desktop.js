@@ -19,6 +19,7 @@
     entertainment: svg('<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M17 2l-5 5-5-5"/>'),
     music: svg('<path d="M9 18V6l11-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>'),
     tools: svg('<path d="M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.4 2.4-2.6-.6-.6-2.6z"/>'),
+    chat: svg('<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>'),
     settings: svg('<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>'),
     search: svg('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>'),
     wifi: svg('<path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.6 16a5 5 0 0 1 6.8 0"/><path d="M12 19.5h.01"/>'),
@@ -33,6 +34,7 @@
     { id: "entertainment", name: "Entertainment", kind: "entertainment", hue: 2, on: () => settings.movies },
     { id: "music", name: "Music", kind: "music", hue: 24, on: () => settings.music },
     { id: "tools", name: "Tools", kind: "tools", hue: 205, on: () => settings.tools !== false },
+    { id: "chat", name: "Chat", kind: "chat", hue: 330, on: () => settings.chat !== false },
     { id: "settings", name: "Settings", kind: "settings", hue: 220, on: () => true },
   ];
   const enabled = () => APPS.filter((a) => a.on());
@@ -353,10 +355,11 @@ body.desktop #toast,body.desktop #banner,body.desktop #update,body.desktop #tour
     });
   }
   function logoMenu(btn) {
-    showPop(btn, '<button class="dk-item" data-act="about" type="button">About Nex.Velo</button><button class="dk-item" data-act="settings" type="button">Settings…</button><hr><button class="dk-item" data-act="normal" type="button">Switch to normal layout</button><button class="dk-item" data-act="closeall" type="button">Close all windows</button>',
+    showPop(btn, '<button class="dk-item" data-act="about" type="button">About Nex.Velo</button><button class="dk-item" data-act="settings" type="button">Settings…</button><button class="dk-item" data-act="install" type="button">Install as an app</button><hr><button class="dk-item" data-act="normal" type="button">Switch to normal layout</button><button class="dk-item" data-act="closeall" type="button">Close all windows</button>',
     (a) => {
       if (a === "about") NV.openSettings("about");
       else if (a === "settings") NV.openSettings();
+      else if (a === "install") { if (NV.install.can()) NV.install.prompt(); else NV.showBanner(NV.install.help(), false, "info"); }
       else if (a === "closeall") wins.slice().forEach(closeWin);
       else if (a === "normal") { settings.mode = "normal"; NV.save(); location.reload(); }
     });
