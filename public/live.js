@@ -119,7 +119,7 @@
           let k = Math.exp(-d / (190 * Q)) * (0.55 + 0.45 * Math.sin(d / (24 * Q) - T * 4));
           for (const ring of S.rings) { const dd = Math.hypot(x - ring.x, y - ring.y), w = Math.exp(-(((dd - ring.t * 380 * Q) / (46 * Q)) ** 2)) * (1 - ring.t / 2.4); k += w; }
           const idle = 0.12 + 0.1 * Math.sin(x * 0.02 + T) * Math.cos(y * 0.02 - T * 0.8), s = Math.max(0.6, (1.2 + (k + idle) * 4.4) * Q), ox = d > 0.1 ? (dx / d) * k * 9 * Q : 0, oy = d > 0.1 ? (dy / d) * k * 9 * Q : 0;
-          ctx.fillStyle = rgba(pal[(c + r + Math.floor(T * 0.6)) % pal.length], Math.min(1, 0.25 + k * 0.7 + idle)); ctx.beginPath(); ctx.arc(x + ox, y + oy, s, 0, 6.283); ctx.fill();
+          ctx.fillStyle = rgba(pal[Math.abs(c + r + Math.floor(T * 0.6)) % pal.length], Math.min(1, 0.25 + k * 0.7 + idle)); ctx.beginPath(); ctx.arc(x + ox, y + oy, s, 0, 6.283); ctx.fill();
         }
       },
       click() { S.rings && S.rings.push({ x: M.x, y: M.y, t: 0 }); },
@@ -146,7 +146,7 @@
   }
   function loop(now) {
     raf = requestAnimationFrame(loop);
-    const dt = Math.min(0.05, (now - last) / 1000 || 0.016); last = now; T += dt; draw(dt);
+    const dt = Math.max(0.001, Math.min(0.05, (now - last) / 1000 || 0.016)); last = now; T += dt; draw(dt); // (the frame clock can start a hair before "last", so time never goes backwards)
   }
   function run() { cancelAnimationFrame(raf); raf = 0; if (!id || reduce() || document.hidden) { if (id) draw(0); return; } last = performance.now(); raf = requestAnimationFrame(loop); }
 
