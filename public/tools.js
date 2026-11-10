@@ -59,6 +59,10 @@ textarea.tl-ta:focus,.tl-in:focus{box-shadow:0 0 0 2px var(--focus)}
 .tl-chips button{padding:.375rem .75rem;border-radius:1rem;background:var(--btn);font-size:.8125rem;font-variant-numeric:tabular-nums}
 .tl-chips button:hover{background:var(--btn-h)}
 .tl-chips .n{padding:.375rem .75rem;border-radius:1rem;background:var(--btn);font-size:.9375rem;font-variant-numeric:tabular-nums}
+.tl-card .btn,.tl-wrap .btn,#tl-home .btn,#tl-view .btn,.tl-row .btn,.tl-chips button{height:auto;min-height:2.5rem;max-width:100%;flex:0 1 auto;white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.25;padding-top:.4375rem;padding-bottom:.4375rem;text-align:center}
+.tl-row .btn{min-height:2rem}
+.tl-tile{overflow:visible;hyphens:auto}.tl-tile b,.tl-tile small{white-space:normal;text-align:center}
+.tl-card .row,.tl-card .tl-chips{flex-wrap:wrap}
 .tl-swatch{height:6rem;border-radius:1rem;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--fg) 14%,transparent)}
 .tl-preview{position:relative;height:min(50vh,26rem);border-radius:.875rem;overflow:hidden;background:var(--card)}
 .tl-preview iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff}
