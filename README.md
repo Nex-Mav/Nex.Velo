@@ -24,3 +24,10 @@ INSPIRATION: Mochii proxy (produced by Atmo1lost on GitHub)
 
 PLEASE ASK maverick_magic14 (A.K.A Nex.Mav) for permission 
  before using any of our products
+
+----------------------------------------------------------
+
+LINKS:
+https://nex-velo.up.railway.app
+https://nex-velo.vercel.app
+https://nex-velo.nexero.workers.dev
