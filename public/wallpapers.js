@@ -1,4 +1,46 @@
 /* Wallpapers drawn as SVG so they work offline. Swap for photos any time via Settings > Appearance > custom. */
+
+/* Proxy engines. This runs before app.js, so it can hand app.js a controller that builds Ultraviolet frames when Ultraviolet is chosen
+   (Settings > General > proxy engine, or the first-visit setup). Scramjet stays the default and the fallback. */
+(() => {
+  const real = window.$scramjetLoadController;
+  if (typeof real !== "function") return;
+  const pick = () => {
+    try { const o = JSON.parse(sessionStorage.getItem("nexvelo.session") || "{}"); if (o.proxy) return o.proxy; } catch {}
+    try { return JSON.parse(localStorage.getItem("nexvelo.settings") || "{}").proxy || "scramjet"; } catch { return "scramjet"; }
+  };
+  let failed = "", loading = null;
+  const loadUV = () => (loading ||= (async () => {
+    for (const f of ["/uv/uv.bundle.js", "/uv/uv.config.js"]) {
+      await new Promise((ok, no) => { const s = document.createElement("script"); s.src = f; s.onload = ok; s.onerror = () => no(new Error("couldn't load " + f)); document.head.appendChild(s); });
+    }
+    if (!self.__uv$config) throw new Error("Ultraviolet's config did not load");
+  })());
+  const uvFrame = () => {
+    const frame = document.createElement("iframe"), cfg = () => self.__uv$config, base = () => location.origin + cfg().prefix;
+    return {
+      frame,
+      go(u) { frame.src = base() + cfg().encodeUrl(String(u)); },
+      get url() { try { const h = frame.contentWindow.location.href; if (h.startsWith(base())) return new URL(cfg().decodeUrl(h.slice(base().length))); } catch {} return null; },
+    };
+  };
+  window.$scramjetLoadController = function () {
+    const out = real.apply(this, arguments), Base = out.ScramjetController;
+    class WithEngines extends Base {
+      async init(...a) {
+        const r = await super.init(...a);
+        if (pick() === "uv") {
+          try { await loadUV(); }
+          catch (e) { failed = String(e.message || e); console.warn("[nex.velo] Ultraviolet unavailable:", failed); setTimeout(() => window.NV && NV.showBanner && NV.showBanner("couldn't load Ultraviolet (" + failed + "). Scramjet is being used instead."), 1500); }
+        }
+        return r;
+      }
+      createFrame(...a) { return pick() === "uv" && !failed && self.__uv$config ? uvFrame() : super.createFrame(...a); }
+    }
+    return Object.assign({}, out, { ScramjetController: WithEngines });
+  };
+})();
+
 (() => {
   const rng = (s) => () => (s = (s * 16807) % 2147483647) / 2147483647;
   const wrap = (inner) =>
@@ -123,6 +165,16 @@
     if (!NV.THEMES.some((t) => t[0] === "christmas")) {
       const i = NV.THEMES.findIndex((t) => t[0] === "custom");
       NV.THEMES.splice(i < 0 ? NV.THEMES.length : i, 0, ["christmas", "christmas", "linear-gradient(135deg,#d62839 50%,#1f7a46 50%)"]);
+    }
+
+    /* ----- proxy engine (Settings > General) ----- */
+    const engineBox = $("#engine");
+    if (engineBox && !$("#proxy-engine")) {
+      const fld = document.createElement("label"); fld.className = "fld";
+      fld.innerHTML = '<span>proxy engine</span><select id="proxy-engine"><option value="scramjet">Scramjet (default)</option><option value="uv">Ultraviolet</option></select>';
+      engineBox.closest("label").after(fld);
+      const pe = fld.querySelector("select"); pe.value = NV.settings.proxy || "scramjet";
+      pe.addEventListener("change", () => { NV.settings.proxy = pe.value; NV.save(); NV.toast("switching proxy engine…"); setTimeout(() => location.reload(), 400); });
     }
 
     /* ----- layout: original or windows (the desktop layout) ----- */
