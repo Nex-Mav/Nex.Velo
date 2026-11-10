@@ -19,6 +19,7 @@
     "soundcloud.ts": "latest",
     "ytmusic-api": "latest",
     "@distube/ytdl-core": "latest",
-    "@huggingface/transformers": "^3.0.0"
+    "@huggingface/transformers": "^3.0.0",
+    "@titaniumnetwork-dev/ultraviolet": "^3.2.7"
   }
 }
