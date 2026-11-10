@@ -133,7 +133,7 @@
     if (sec) (sec.querySelector("h2") || sec.firstChild).after(layout);
     const paintLayout = () => layout.querySelectorAll("[data-m]").forEach((b) => {
       const on = (NV.settings.mode === "desktop") === (b.dataset.m === "desktop");
-      b.classList.toggle("primary", on); b.disabled = on; b.textContent = (b.dataset.m === "desktop" ? "windows" : "original") + (on ? " (current)" : "");
+      b.classList.toggle("primary", on); b.disabled = on; b.textContent = (b.dataset.m === "desktop" ? "windows (desktop)" : "original") + (on ? " (current)" : "");
     });
     layout.addEventListener("click", (e) => {
       const b = e.target.closest("[data-m]"); if (!b || b.disabled) return;
