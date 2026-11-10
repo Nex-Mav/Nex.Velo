@@ -23,6 +23,9 @@
 .ent>.ghead{margin-bottom:.75rem}
 .ent-pane{display:flex;flex-direction:column;flex:1;min-height:0}
 .ent-pane>.gpage{padding:0;flex:1;min-height:0}
+#mv-view{display:flex;flex-direction:column;flex:1;min-height:0}#mv-view[hidden]{display:none}
+#mv-view .mvdetail{overflow-y:auto;overscroll-behavior:contain;align-content:start}
+.mvside{min-width:0}.mvside .fld select{width:100%}
 .ent-pane .ghead{margin-bottom:.75rem}
 .ent-reader{position:relative;height:min(72vh,46rem);border-radius:.875rem;overflow:hidden;background:var(--card)}
 .ent-load{position:absolute;inset:0;z-index:2;display:grid;place-items:center;align-content:center;gap:.25rem;padding:1.5rem;text-align:center;color:var(--dim);background:var(--card);font-size:.875rem}
@@ -328,4 +331,4 @@
 
   NV.loaded.entertainment = true;
   if (page.parentNode && page.parentNode.id !== "pages") show(cur); // this tab was restored before the file finished loading
-})(); 
+})();
