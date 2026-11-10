@@ -61,11 +61,15 @@ body.desktop #toast,body.desktop #banner,body.desktop #update,body.desktop #tour
 .dk-batt i b{display:block;height:100%;width:0;background:currentColor;border-radius:1.5px}
 .dk-batt.chg i b{background:#2fa862}
 #dk-icons{position:absolute;inset:0;z-index:0}
+#dk-icons.snapping{background-image:radial-gradient(circle,color-mix(in srgb,var(--fg) 34%,transparent) 1.5px,transparent 2.5px);background-size:104px 96px;background-position:8px 36px}
+.dk-icon.snap{transition:left .14s cubic-bezier(.3,.9,.3,1),top .14s cubic-bezier(.3,.9,.3,1)}.dk-icon.lift{z-index:3;filter:drop-shadow(0 8px 14px rgba(0,0,0,.35))}
+#desktop .clock{display:none!important} /* the menu bar already shows the time */
 .dk-icon{position:absolute;width:88px;display:flex;flex-direction:column;align-items:center;gap:.25rem;padding:.375rem .25rem;border-radius:10px;text-align:center;font-size:.6875rem;line-height:1.2;touch-action:none}
 .dk-icon.sel{background:color-mix(in srgb,var(--accent) 30%,transparent)}
-.dk-icon>span:last-child{text-shadow:0 1px 3px rgba(0,0,0,.55);color:#fff;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 .25rem;border-radius:4px}
+.dk-icon>span:last-child{text-shadow:0 0 6px var(--bg),0 1px 3px var(--bg);color:var(--fg);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 .25rem;border-radius:4px}
 .dk-icon.sel>span:last-child{background:var(--accent);color:var(--accent-fg);text-shadow:none}
-.dk-tile{width:52px;height:52px;border-radius:13px;display:grid;place-items:center;color:#fff;box-shadow:0 4px 12px rgba(0,0,0,.3),inset 0 0 0 1px rgba(255,255,255,.18);background:linear-gradient(150deg,hsl(var(--h) 78% 64%),hsl(var(--h) 78% 46%))}
+.dk-tile{width:52px;height:52px;border-radius:13px;display:grid;place-items:center;color:var(--accent-fg,#fff);box-shadow:0 4px 12px rgba(0,0,0,.3),inset 0 0 0 1px color-mix(in srgb,var(--accent-fg,#fff) 22%,transparent);background:linear-gradient(0deg,var(--accent),color-mix(in srgb,var(--accent) 62%,transparent))}
+html[data-pop] .dk-tile{background:linear-gradient(0deg,var(--accent),color-mix(in srgb,var(--accent2,var(--accent)) 60%,transparent))}
 .dk-tile svg{width:56%;height:56%}
 #dk-wins{position:absolute;inset:0;z-index:1;pointer-events:none}
 .dk-win{position:absolute;display:flex;flex-direction:column;border-radius:12px;background:var(--panel);pointer-events:auto;overflow:hidden;
@@ -283,28 +287,53 @@ body.desktop #toast,body.desktop #banner,body.desktop #update,body.desktop #tour
     if (app.kind === "web") NV.newTab({ kind: "web" }); else NV.openPage(app.kind);
   }
 
-  /* ---------- desktop icons: drag them anywhere, double-click to open ---------- */
+  /* ---------- desktop icons: they sit on a grid. drag one and it jumps from cell to cell, never in between ---------- */
+  const GRID = { w: 104, h: 96, x: 8, y: MENU_H + 8 }, ICON_W = 88;
   function buildIcons() {
     const box = $("#dk-icons"); let saved = {}; try { saved = JSON.parse(LS.get("nexvelo.desk.icons", "{}")) || {}; } catch {}
     box.innerHTML = "";
+    const cols = Math.max(1, Math.floor((innerWidth - GRID.x) / GRID.w)), rows = Math.max(1, Math.floor((innerHeight - DOCK_H - GRID.y) / GRID.h));
+    const taken = new Map(); // "col,row" -> app id
+    const px = (c, r) => ({ x: GRID.x + c * GRID.w + (GRID.w - ICON_W) / 2, y: GRID.y + r * GRID.h });
+    const cellOf = (x, y) => [Math.round((x - GRID.x - (GRID.w - ICON_W) / 2) / GRID.w), Math.round((y - GRID.y) / GRID.h)];
+    const free = (c, r, id) => { const t = taken.get(c + "," + r); return !t || t === id; };
+    const nearest = (c, r, id) => { // the closest empty cell to the one asked for
+      c = Math.max(0, Math.min(cols - 1, c)); r = Math.max(0, Math.min(rows - 1, r));
+      if (free(c, r, id)) return [c, r];
+      for (let d = 1; d <= cols + rows; d++) {
+        let best = null, bd = 1e9;
+        for (let dc = -d; dc <= d; dc++) for (let dr = -d; dr <= d; dr++) {
+          if (Math.max(Math.abs(dc), Math.abs(dr)) !== d) continue;
+          const cc = c + dc, rr = r + dr;
+          if (cc < 0 || rr < 0 || cc >= cols || rr >= rows || !free(cc, rr, id)) continue;
+          const dd = dc * dc + dr * dr; if (dd < bd) { bd = dd; best = [cc, rr]; }
+        }
+        if (best) return best;
+      }
+      return [c, r];
+    };
     enabled().forEach((a, i) => {
       const el = document.createElement("div"); el.className = "dk-icon"; el.dataset.id = a.id;
       el.innerHTML = `<span class="dk-tile" style="--h:${a.hue}">${IC[a.id]}</span><span>${esc(a.name)}</span>`;
-      const p = saved[a.id] || { x: innerWidth - 104, y: MENU_H + 14 + i * 94 };
-      const place = (x, y) => { el.style.left = Math.max(0, Math.min(innerWidth - 88, x)) + "px"; el.style.top = Math.max(MENU_H, Math.min(innerHeight - DOCK_H - 90, y)) + "px"; };
-      place(p.x, p.y); box.appendChild(el);
+      let cell = saved[a.id] ? cellOf(saved[a.id].x, saved[a.id].y) : [cols - 1, i];
+      cell = nearest(cell[0], cell[1], a.id); taken.set(cell[0] + "," + cell[1], a.id);
+      const place = () => { const p = px(cell[0], cell[1]); el.style.left = p.x + "px"; el.style.top = p.y + "px"; };
+      place(); box.appendChild(el);
       el.addEventListener("pointerdown", (e) => {
         if (e.button !== 0) return; e.stopPropagation();
         box.querySelectorAll(".dk-icon").forEach((x) => x.classList.toggle("sel", x === el));
         const sx = e.clientX, sy = e.clientY, ox = parseFloat(el.style.left), oy = parseFloat(el.style.top); let moved = false;
         el.setPointerCapture(e.pointerId);
-        const move = (ev) => { if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 5) return; moved = true; place(ox + ev.clientX - sx, oy + ev.clientY - sy); };
+        const move = (ev) => {
+          if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 5) return;
+          if (!moved) { moved = true; box.classList.add("snapping"); el.classList.add("snap", "lift"); }
+          const want = cellOf(ox + ev.clientX - sx, oy + ev.clientY - sy), next = nearest(want[0], want[1], a.id);
+          if (next[0] !== cell[0] || next[1] !== cell[1]) { taken.delete(cell[0] + "," + cell[1]); cell = next; taken.set(cell[0] + "," + cell[1], a.id); place(); }
+        };
         const up = () => {
           el.removeEventListener("pointermove", move); el.removeEventListener("pointerup", up); el.removeEventListener("pointercancel", up);
-          if (moved) { // settle onto a tidy grid
-            place(Math.round(parseFloat(el.style.left) / 8) * 8, Math.round(parseFloat(el.style.top) / 8) * 8);
-            saved[a.id] = { x: parseFloat(el.style.left), y: parseFloat(el.style.top) }; LS.set("nexvelo.desk.icons", JSON.stringify(saved));
-          }
+          box.classList.remove("snapping"); el.classList.remove("lift");
+          if (moved) { const p = px(cell[0], cell[1]); saved[a.id] = { x: p.x, y: p.y }; LS.set("nexvelo.desk.icons", JSON.stringify(saved)); }
         };
         el.addEventListener("pointermove", move); el.addEventListener("pointerup", up); el.addEventListener("pointercancel", up);
       });
