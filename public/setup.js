@@ -122,11 +122,14 @@
   const effFont = () => (NV.FONTS[settings.font] ? settings.font : settings.theme === "custom" && NV.FONTS[settings.custom.font] ? settings.custom.font : "jetbrains");
   function runSetup(first) {
     if ($("#su")) return;
-    const orig = { mode: settings.mode, theme: settings.theme, font: settings.font, wall: settings.wall };
+    const orig = { mode: settings.mode, theme: settings.theme, font: settings.font, wall: settings.wall, proxy: settings.proxy || "scramjet" };
+    let proxy = orig.proxy;
+    const ENGINES = [["scramjet", "Scramjet", "the default engine. fast and well tested"], ["uv", "Ultraviolet", "an older, widely used engine. try it if a site won't load on Scramjet"]];
     let step = 1, popped = false, remember = true;
     let mode = settings.mode === "desktop" ? "desktop" : "normal", theme = settings.theme, font = effFont(), wall = settings.wall;
     let method = ["here", "blank", "blob", "window"].includes(settings.launch) ? settings.launch : "here", redirect = settings.launchRedirect !== false;
     const themes = (NV.THEMES || []).filter((t) => t[0] !== "custom"), fonts = Object.entries(NV.FONTS || {});
+    if (!themes.some((t) => t[0] === "christmas")) themes.push(["christmas", "christmas", "linear-gradient(135deg,#d62839 50%,#1f7a46 50%)"]); // the theme file may not have registered it yet
     fonts.forEach(([k]) => NV.loadFont && NV.loadFont(k)); // so every font can be previewed in its own typeface
     const walls = [["none", "none", ""], ...(NV.LIVE || []).map((l) => [l[0], l[1], l[2]])];
     const box = document.createElement("div"); box.id = "su"; box.setAttribute("role", "dialog"); box.setAttribute("aria-modal", "true"); box.setAttribute("aria-label", "Set up Nex.Velo");
@@ -150,7 +153,8 @@
 <h2>font</h2><div class="su-fonts">${fonts.map(([k, f]) => `<button class="su-fn${k === font ? " on" : ""}" data-f="${k}" type="button" style="font-family:${f[1].replace(/"/g, "&quot;")}"><b>Aa 123</b><small>${esc(f[0])}</small></button>`).join("")}</div>
 <h2>live wallpaper (it reacts to your mouse)</h2><div class="su-walls">${walls.map(([id, label, g]) => `<button class="su-wl${id === wall ? " on" : ""}" data-w="${id}" type="button"><i${g ? ` style="--c:${g}"` : ""}></i>${esc(label)}</button>`).join("")}</div>`;
       const showInstall = !(NV.install && NV.install.standalone());
-      return `<h2>how should Nex.Velo open?</h2><div class="su-list">${METHODS.map(([id, name, desc]) => `<button class="su-row${id === method ? " on" : ""}" data-m="${id}" type="button"><span class="dot"></span><span><b>${esc(name)}</b><small>${esc(desc)}</small></span></button>`).join("")}</div>
+      return `<h2>proxy engine</h2><div class="su-list">${ENGINES.map(([id, name, desc]) => `<button class="su-row${id === proxy ? " on" : ""}" data-p="${id}" type="button"><span class="dot"></span><span><b>${esc(name)}</b><small>${esc(desc)}</small></span></button>`).join("")}</div>
+<h2>how should Nex.Velo open?</h2><div class="su-list">${METHODS.map(([id, name, desc]) => `<button class="su-row${id === method ? " on" : ""}" data-m="${id}" type="button"><span class="dot"></span><span><b>${esc(name)}</b><small>${esc(desc)}</small></span></button>`).join("")}</div>
 ${method === "blank" || method === "window" ? `<label class="su-chk"><input type="checkbox" id="su-redir"${redirect ? " checked" : ""}><span>after it opens, send this tab to <b>${esc(host(dest()))}</b></span></label>` : ""}
 <label class="switch"><div><b>remember my choices</b><small id="su-remnote">${remember ? REM_ON : REM_OFF}</small></div><input type="checkbox" id="su-rem"${remember ? " checked" : ""}></label>
 ${showInstall ? `<div><button class="btn" data-a="install" type="button">install as an app</button><p class="su-note" id="su-inst"></p></div>` : ""}`;
@@ -165,7 +169,7 @@ ${preview()}<div class="su-body">${body()}</div>
 
     const revert = () => { settings.theme = orig.theme; settings.font = orig.font; settings.wall = orig.wall; NV.applyTheme(true); NV.applyWall(); };
     function finish() {
-      const data = { mode, theme, font, wall, launch: method, launchRedirect: redirect };
+      const data = { mode, theme, font, wall, launch: method, launchRedirect: redirect, proxy };
       Object.assign(settings, data);
       if (remember) { NV.save(); LS.set("nexvelo.setup", "1"); } else NV.setSession(data); // not remembered: kept for this visit only
       const outside = window.top === window.self;
@@ -175,11 +179,12 @@ ${preview()}<div class="su-body">${body()}</div>
         box.remove();
         if (redirect) { location.replace(dest()); return; }
       } else box.remove();
-      if (mode !== orig.mode) location.reload(); // the layout is picked when the site starts
+      if (mode !== orig.mode || proxy !== orig.proxy) location.reload(); // the layout is picked when the site starts
     }
     box.addEventListener("click", async (e) => {
-      const a = e.target.closest("[data-a]"), md = e.target.closest("[data-mode]"), t = e.target.closest("[data-t]"), f = e.target.closest("[data-f]"), w = e.target.closest("[data-w]"), m = e.target.closest("[data-m]");
-      if (md) { mode = md.dataset.mode; draw(); }
+      const a = e.target.closest("[data-a]"), md = e.target.closest("[data-mode]"), t = e.target.closest("[data-t]"), f = e.target.closest("[data-f]"), w = e.target.closest("[data-w]"), m = e.target.closest("[data-m]"), pe = e.target.closest("[data-p]");
+      if (pe) { proxy = pe.dataset.p; draw(); }
+      else if (md) { mode = md.dataset.mode; draw(); }
       else if (t) { theme = t.dataset.t; settings.theme = theme; NV.applyTheme(true); draw(); } // the whole site changes behind this screen, so you can see it
       else if (f) { font = f.dataset.f; settings.font = font; NV.applyTheme(); draw(); }
       else if (w) { wall = w.dataset.w; settings.wall = wall; NV.applyWall(); draw(); }
