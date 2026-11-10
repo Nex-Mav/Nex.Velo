@@ -68,6 +68,18 @@
 .su-card .switch{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.25rem 0}.su-card .switch small{display:block;color:var(--dim);font-size:.75rem;margin-top:.125rem}
 #su-pill{position:fixed;left:50%;bottom:1.25rem;z-index:200000;transform:translateX(-50%);display:flex;align-items:center;gap:.75rem;padding:.625rem .625rem .625rem 1rem;border-radius:999px;background:color-mix(in srgb,var(--panel) 85%,transparent);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);box-shadow:0 0 0 1px color-mix(in srgb,var(--fg) 16%,transparent),0 12px 36px rgba(0,0,0,.4);color:var(--fg);font:.8125rem var(--font,system-ui,sans-serif)}
 #su-pill button{height:1.875rem;padding:0 .875rem;border:0;border-radius:999px;background:var(--btn,rgba(128,128,128,.2));color:inherit;font:inherit}
+.su-prev{flex:none;border-radius:.875rem;overflow:hidden;background:var(--pbg);color:var(--fg);font-family:var(--font,system-ui,sans-serif);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--fg) 14%,transparent)}
+.pv-url{height:1.375rem;display:flex;align-items:center;justify-content:center;padding:0 .75rem;font-size:.6875rem;background:color-mix(in srgb,var(--panel) 82%,transparent);color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pv-stage{position:relative;height:7.25rem;overflow:hidden}.pv-stage i{position:absolute;display:block;font-style:normal}
+.pv-mb{left:0;right:0;top:0;height:.875rem;display:flex!important;justify-content:space-between;align-items:center;padding:0 .5rem;font-size:.5625rem;background:color-mix(in srgb,var(--panel) 62%,transparent)}.pv-mb em{font-style:normal}
+.pv-win{left:14%;top:1.5rem;width:52%;height:3.6rem;border-radius:.4rem;background:var(--panel);box-shadow:0 4px 12px rgba(0,0,0,.3)}
+.pv-win s{position:absolute;left:.3rem;top:.3rem;width:.55rem;height:.2rem;background:linear-gradient(90deg,#ff5f57 0 30%,transparent 30% 35%,#febc2e 35% 65%,transparent 65% 70%,#28c840 70%)}
+.pv-ic,.pv-dock s{background:linear-gradient(0deg,var(--accent),color-mix(in srgb,var(--accent) 62%,transparent))}
+.pv-ic{right:.6rem;width:1.1rem;height:1.1rem;border-radius:.3rem}
+.pv-dock{left:50%;bottom:.25rem;transform:translateX(-50%);display:flex!important;gap:.25rem;padding:.2rem .3rem;border-radius:.5rem;background:color-mix(in srgb,var(--panel) 62%,transparent)}.pv-dock s{display:block;width:.9rem;height:.9rem;border-radius:.25rem}
+.pv-tabs{left:0;right:0;top:0;height:1.1rem;background:var(--chrome,color-mix(in srgb,var(--fg) 7%,var(--bg)))}.pv-tabs s{position:absolute;left:.4rem;top:.2rem;width:4rem;height:.7rem;border-radius:.25rem;background:color-mix(in srgb,var(--fg) 20%,transparent)}
+.pv-clock{left:0;right:0;top:1.7rem;text-align:center;font-size:2rem;font-weight:300;line-height:1.2;color:var(--clock,var(--fg))}
+.pv-search{left:50%;top:4.9rem;width:60%;transform:translateX(-50%);height:1.4rem;line-height:1.4rem;border-radius:.4rem;text-align:center;font-size:.625rem;background:var(--bar,color-mix(in srgb,var(--fg) 12%,var(--bg)));color:var(--dim)}
 @media (prefers-reduced-motion:reduce){.su-card.pop{animation:none}.su-opt,.su-row,.su-th,.su-fn,.su-wl,.su-dots i{transition:none}}
 `;
   document.head.appendChild(style);
@@ -119,6 +131,15 @@
     const walls = [["none", "none", ""], ...(NV.LIVE || []).map((l) => [l[0], l[1], l[2]])];
     const box = document.createElement("div"); box.id = "su"; box.setAttribute("role", "dialog"); box.setAttribute("aria-modal", "true"); box.setAttribute("aria-label", "Set up Nex.Velo");
     document.body.appendChild(box);
+    // the finished result, redrawn on every step with the layout, colours, font, wallpaper and opening method chosen so far
+    function preview() {
+      const wl = walls.find((w) => w[0] === wall), pbg = wl && wl[2] ? wl[2] : "var(--bg)";
+      const url = method === "blob" ? "blob:" + location.origin + "/…" : method === "blank" ? "about:blank" : method === "window" ? "about:blank · pop-up window" : host(location.href);
+      const inner = mode === "desktop"
+        ? '<i class="pv-mb"><em>Nex.Velo</em><em>12:00</em></i><i class="pv-win"><s></s></i><i class="pv-ic" style="top:1.7rem"></i><i class="pv-ic" style="top:2.9rem"></i><i class="pv-ic" style="top:4.1rem"></i><i class="pv-dock"><s></s><s></s><s></s><s></s><s></s></i>'
+        : '<i class="pv-tabs"><s></s></i><i class="pv-clock">12:00</i><i class="pv-search">search or enter address</i>';
+      return `<div class="su-prev" style="--pbg:${pbg}" aria-label="preview of your choices"><div class="pv-url">${esc(url)}</div><div class="pv-stage">${inner}</div></div>`;
+    }
     const TITLES = ["", "choose a layout", "choose your look", "how should it open?"];
 
     const body = () => {
@@ -136,7 +157,7 @@ ${showInstall ? `<div><button class="btn" data-a="install" type="button">install
     };
     function draw() {
       box.innerHTML = `<div class="su-card${popped ? "" : " pop"}"><div class="su-head"><h1>${first ? "welcome to Nex.Velo" : "layout and launch mode"}</h1><p>step ${step} of 3 · ${TITLES[step]}</p><div class="su-dots">${[1, 2, 3].map((i) => `<i class="${i === step ? "on" : i < step ? "done" : ""}"></i>`).join("")}</div></div>
-<div class="su-body">${body()}</div>
+${preview()}<div class="su-body">${body()}</div>
 <div class="su-end">${first ? '<button class="btn" data-a="skip" type="button">skip for now</button>' : '<button class="btn" data-a="cancel" type="button">cancel</button>'}<span class="sp"></span>${step > 1 ? '<button class="btn" data-a="back" type="button">back</button>' : ""}<button class="btn primary" data-a="next" type="button">${step < 3 ? "next" : first ? "start" : "save"}</button></div></div>`;
       popped = true;
     }
