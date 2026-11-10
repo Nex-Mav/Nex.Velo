@@ -56,7 +56,7 @@
       $("#mvnote").style.whiteSpace = ""; $("#mvnote").textContent = d.tmdb ? "" : "free films and classic TV (marked free to watch) play right here. other titles show details, trailers and where to watch. the server owner can add a free TMDB_API_KEY for even more.";
       const problems = Object.entries(d.errors || {}).map(([k, v]) => k + ": " + v).join("; ");
       if (!items.length) { msg((q ? "nothing found for that. try another title." : "no titles available right now.") + (problems ? " (" + problems + ")" : ""), !!problems); if (!q || problems) explain(); }
-      else msg(problems ? "some sources didn't answer (" + problems + "), so this list may be shorter." : "", !!problems);
+      else msg(""); // a source that returned nothing is not worth a warning when there are titles to show
     } catch (e) {
       if (my !== searchToken) return;
       items = []; renderGrid(); $("#mvcount").textContent = ""; msg("couldn't load movies: " + e.message, true); explain();
@@ -68,7 +68,7 @@
 
   // The browser's own video player. The file comes through the server, so it works where the source site is blocked.
   function showVideo(src, fallback) {
-    const holder = $("#mv-player"); holder.innerHTML = ""; embedUrl = fallback || "";
+    const holder = $("#mv-player"); holder.innerHTML = ""; embedUrl = fallback || new URL(src, location.href).href; // so "open in its own tab" always has an address
     const v = document.createElement("video");
     v.controls = true; v.autoplay = true; v.playsInline = true; v.preload = "metadata"; v.src = src;
     v.style.cssText = "position:absolute;inset:0;width:100%;height:100%;background:#000";
@@ -172,7 +172,7 @@
     if (u) { showVideo(window.NV.api("/api/movies/stream?u=" + encodeURIComponent(u)), ""); playMsg(""); } // a trailer file, played in the built-in player
     else if (k) { showEmbed("https://www.youtube-nocookie.com/embed/" + encodeURIComponent(k) + "?rel=0&autoplay=1"); playMsg(""); }
   });
-  $("#mv-open").addEventListener("click", () => { if (embedUrl) openUrl(embedUrl); });
+  $("#mv-open").addEventListener("click", () => { if (embedUrl) openUrl(embedUrl); else window.NV.toast("press play first, then this opens the player in its own tab"); });
   $("#mv-season").addEventListener("change", async (e) => { season = +e.target.value; await loadEpisodes(); });
   $("#mv-episode").addEventListener("change", (e) => { episode = +e.target.value || null; });
 
