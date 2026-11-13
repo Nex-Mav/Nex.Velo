@@ -124,7 +124,7 @@
     if ($("#su")) return;
     const orig = { mode: settings.mode, theme: settings.theme, font: settings.font, wall: settings.wall, proxy: settings.proxy || "scramjet" };
     let proxy = orig.proxy;
-    const ENGINES = [["scramjet", "Scramjet", "the default engine. fast and well tested"], ["uv", "Ultraviolet", "an older, widely used engine. try it if a site won't load on Scramjet"]];
+    const ENGINES = [["scramjet", "Scramjet", "the default engine. fast and well tested"], ["uv", "Ultraviolet", "an older, widely used engine. try it if a site won't load on Scramjet"], ["kaze", "Kaze", "a fast Scramjet fork. needs the Build Kaze action to have been run once"]];
     let step = 1, popped = false, remember = true;
     let mode = settings.mode === "desktop" ? "desktop" : "normal", theme = settings.theme, font = effFont(), wall = settings.wall;
     let method = ["here", "blank", "blob", "window"].includes(settings.launch) ? settings.launch : "here", redirect = settings.launchRedirect !== false;
