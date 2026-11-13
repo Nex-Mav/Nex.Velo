@@ -1,0 +1,85 @@
+# Builds the Kaze proxy engine (github.com/vqol/kaze) and puts its browser files into this repo:
+#   public/kaze-assets/   and   public/kaze-sw.js
+# Run it from the Actions tab: "Build Kaze" > "Run workflow". It takes a while the first time (it compiles Rust).
+# When it finishes, it commits the files to the branch you ran it on, and Railway / Vercel redeploy.
+name: Build Kaze
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  WASM_BINDGEN_VERSION: "0.2.105"
+  NODE_VERSION: "24"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Nex.Velo
+        uses: actions/checkout@v4
+
+      - name: Check out Kaze
+        uses: actions/checkout@v4
+        with:
+          repository: vqol/kaze
+          path: kaze
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: kaze/package.json
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Kaze's packages
+        run: pnpm install
+        working-directory: kaze
+
+      - name: Set up the Rust toolchain Kaze needs
+        uses: ./kaze/.github/actions/setup-rewriter-toolchain
+        with:
+          wasm-bindgen-version: ${{ env.WASM_BINDGEN_VERSION }}
+          rewriter-path: kaze/packages/core/rewriter
+          github-token: ${{ github.token }}
+
+      - name: Build the rewriter (Rust to wasm)
+        run: RELEASE=1 pnpm rewriter:build
+        working-directory: kaze/packages/core
+
+      - name: Build Kaze
+        run: pnpm build
+        working-directory: kaze
+
+      - name: Collect the embed files
+        run: pnpm build
+        working-directory: kaze/packages/embed
+
+      - name: Copy the files into public/
+        run: |
+          rm -rf public/kaze-assets
+          mkdir -p public
+          cp -r kaze/packages/embed/assets public/kaze-assets
+          cat > public/kaze-sw.js <<'SW'
+          importScripts("/kaze-assets/controller.sw.js");
+          addEventListener("install", () => self.skipWaiting());
+          addEventListener("activate", (e) => e.waitUntil(clients.claim()));
+          addEventListener("fetch", (e) => {
+            if ($kazeController.shouldRoute(e)) e.respondWith($kazeController.route(e));
+          });
+          SW
+          rm -rf kaze
+          ls -la public/kaze-assets | head -30
+
+      - name: Commit
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add public/kaze-assets public/kaze-sw.js
+          git commit -m "Add Kaze build" || echo "nothing changed"
+          git push
