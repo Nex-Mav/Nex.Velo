@@ -96,6 +96,14 @@ html[data-pop] .dk-tile{background:linear-gradient(0deg,var(--accent),color-mix(
 .dk-addr:focus{box-shadow:0 0 0 2px var(--accent)}
 .dk-body{position:relative;flex:1;min-height:0;-webkit-user-select:text;user-select:text}
 .dk-body>.view{position:absolute!important;inset:0!important;width:auto!important;height:auto!important}
+.dk-body>.view.dk-hide{display:none!important}
+body.desktop #tabbar,body.desktop #toolbar,body.desktop #views{display:none!important} /* the address only lives inside the proxy window */
+.dk-tabs{display:flex;gap:2px;padding:4px 8px 0;overflow-x:auto;scrollbar-width:none;background:color-mix(in srgb,var(--fg) 7%,transparent);flex:none}
+.dk-tabs::-webkit-scrollbar{display:none}.dk-tabs[hidden]{display:none}
+.dk-tab{display:flex;align-items:center;gap:.25rem;flex:0 1 11rem;min-width:4.5rem;height:26px;padding:0 .25rem 0 .625rem;border-radius:8px 8px 0 0;font-size:.75rem;color:var(--dim);cursor:default;touch-action:none;-webkit-user-select:none;user-select:none}
+.dk-tab>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dk-tab:hover{background:color-mix(in srgb,var(--fg) 10%,transparent)}.dk-tab.on{background:var(--panel);color:var(--fg)}
+.dk-tx{width:16px;height:16px;border-radius:50%;line-height:1;font-size:.8125rem;color:inherit;background:none;border:0;padding:0;cursor:pointer;flex:none}.dk-tx:hover{background:color-mix(in srgb,var(--fg) 18%,transparent)}
 .dk-win:not(.focus) .dk-body::after,.dk-dragging .dk-body::after{content:"";position:absolute;inset:0;z-index:50}
 .dk-rz{position:absolute;z-index:60}
 .dk-rz[data-d="n"]{left:10px;right:10px;top:0;height:5px;cursor:ns-resize}.dk-rz[data-d="s"]{left:10px;right:10px;bottom:0;height:5px;cursor:ns-resize}
@@ -158,7 +166,8 @@ html[data-pop] .dk-tile{background:linear-gradient(0deg,var(--accent),color-mix(
     el.innerHTML = `<div class="dk-bar"><div class="dk-lights"><button class="dk-l r" aria-label="Close window" type="button"><svg viewBox="0 0 12 12"><path d="M3.5 3.5l5 5M8.5 3.5l-5 5"/></svg></button><button class="dk-l y" aria-label="Minimise window" type="button"><svg viewBox="0 0 12 12"><path d="M3 6h6"/></svg></button><button class="dk-l g" aria-label="Zoom window" type="button"><svg viewBox="0 0 12 12"><path d="M3.5 8.5l5-5M3.5 5.5v3h3M8.5 6.5v-3h-3"/></svg></button></div><div class="dk-title"></div></div>` +
       (kind === "web" ? `<div class="dk-tb"><button class="dk-tbb" data-a="back" aria-label="Back" type="button">${IC.back}</button><button class="dk-tbb" data-a="forward" aria-label="Forward" type="button">${IC.forward}</button><button class="dk-tbb" data-a="reload" aria-label="Reload" type="button">${IC.reload}</button><button class="dk-tbb" data-a="home" aria-label="Home" type="button">${IC.home}</button><input class="dk-addr" type="text" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="Search or enter address" aria-label="Address"><button class="dk-tbb" data-a="new" aria-label="New browser window" type="button">${IC.plus}</button></div>` : "") +
       `<div class="dk-body"></div>` + ["n", "s", "e", "w", "ne", "nw", "se", "sw"].map((d) => `<i class="dk-rz" data-d="${d}"></i>`).join("");
-    const w = { el, app, kind, g, max: false, min: false, prev: null, tab: null, body: $(".dk-body", el), title: $(".dk-title", el), addr: $(".dk-addr", el) };
+    const w = { el, app, kind, g, max: false, min: false, prev: null, tab: null, tabs: [], strip: null, body: $(".dk-body", el), title: $(".dk-title", el), addr: $(".dk-addr", el) };
+    if (kind === "web") { const st = document.createElement("div"); st.className = "dk-tabs"; st.hidden = true; $(".dk-bar", el).after(st); w.strip = st; }
     layer.appendChild(el); apply(w); wins.push(w);
     wire(w);
     return w;
@@ -213,6 +222,11 @@ html[data-pop] .dk-tile{background:linear-gradient(0deg,var(--accent),color-mix(
       });
       w.addr.addEventListener("keydown", (e) => { if (e.key === "Enter" && w.tab) { NV.go(w.tab, w.addr.value); w.addr.blur(); } });
       w.addr.addEventListener("focus", () => w.addr.select());
+      w.strip.addEventListener("click", (e) => {
+        const x = e.target.closest("[data-x]"), tb = e.target.closest(".dk-tab");
+        if (x) closeTabIn(w, w.tabs[+x.dataset.x]); else if (tb) activate(w, w.tabs[+tb.dataset.i]);
+      });
+      w.strip.addEventListener("pointerdown", (e) => { const tb = e.target.closest(".dk-tab"); if (tb && !e.target.closest("[data-x]") && e.button === 0) startTabDrag(w, w.tabs[+tb.dataset.i], e); });
     }
   }
 
@@ -252,20 +266,70 @@ html[data-pop] .dk-tile{background:linear-gradient(0deg,var(--accent),color-mix(
     const i = wins.indexOf(w); if (i < 0) return; wins.splice(i, 1);
     if (reduce()) w.el.remove();
     else { w.el.style.transition = "transform .16s ease,opacity .16s"; w.el.style.transform = "scale(.96)"; w.el.style.opacity = "0"; w.el.style.pointerEvents = "none"; setTimeout(() => w.el.remove(), 170); }
-    if (w.tab) NV.closeTab(w.tab);
+    if (w.tabs.length) { for (const t of w.tabs.slice()) NV.closeTab(t); w.tabs.length = 0; } else if (w.tab) NV.closeTab(w.tab);
     if (focused === w) { focused = null; const next = topWin(wins.filter((x) => !x.min)); if (next) focusWin(next); else $("#dk-appname").textContent = "Nex.Velo"; }
     paintDock();
   }
 
-  // app.js sends every new tab here while desktop mode is on
-  NV.desktopOpen = (opts) => {
-    const kind = opts.kind || "web", w = makeWindow(kind);
-    const t = NV.newTab({ ...opts, host: w.body });
-    if (!t) { closeWin(w); return null; }
+  /* ---------- tabs inside a proxy window ---------- */
+  function bindTab(w, t) {
+    t.onTitle = (title) => { if (w.tab === t || !w.tabs.length) w.title.textContent = w.kind === "web" ? title || "New tab" : w.app.name; paintTabs(w); };
+    t.onSync = (tab) => { if (w.addr && w.tab === tab && document.activeElement !== w.addr) w.addr.value = tab.frame ? NV.displayUrl(tab.url) : ""; };
+    t.onFocus = () => { if (w.tabs.includes(t) && w.tab !== t) activate(w, t, true); focusWin(w, true); };
+  }
+  function paintTabs(w) {
+    if (!w.strip) return;
+    w.strip.hidden = w.tabs.length < 2;
+    w.strip.innerHTML = w.tabs.map((t, i) => `<div class="dk-tab${t === w.tab ? " on" : ""}" data-i="${i}" title="${esc(t.title || "")}"><span>${esc(t.title || "New tab")}</span><button class="dk-tx" data-x="${i}" aria-label="Close tab" type="button">×</button></div>`).join("");
+  }
+  function activate(w, t, fromSelect) {
     w.tab = t;
-    t.onTitle = (title) => { w.title.textContent = kind === "web" ? title || "New tab" : w.app.name; };
-    t.onSync = (tab) => { if (w.addr && document.activeElement !== w.addr) w.addr.value = tab.frame ? NV.displayUrl(tab.url) : ""; };
-    t.onFocus = () => focusWin(w, true);
+    for (const x of w.tabs) x.view.classList.toggle("dk-hide", x !== t);
+    w.title.textContent = w.kind === "web" ? t.title || "New tab" : w.app.name;
+    if (w.addr) w.addr.value = t.frame ? NV.displayUrl(t.url) : "";
+    paintTabs(w);
+    if (!fromSelect) NV.select(t);
+  }
+  function closeTabIn(w, t) {
+    const i = w.tabs.indexOf(t); if (i < 0) return;
+    w.tabs.splice(i, 1); NV.closeTab(t);
+    if (!w.tabs.length) { w.tab = null; closeWin(w); return; }
+    if (w.tab === t) activate(w, w.tabs[Math.min(i, w.tabs.length - 1)]); else paintTabs(w);
+  }
+  // pull a tab out of the strip and it becomes a window of its own, which keeps following the pointer until you let go
+  function detach(w, t) {
+    const i = w.tabs.indexOf(t); if (i < 0) return null;
+    const nw = makeWindow("web");
+    w.tabs.splice(i, 1); nw.tabs.push(t); nw.body.appendChild(t.view); bindTab(nw, t);
+    if (w.tab === t) activate(w, w.tabs[Math.min(i, w.tabs.length - 1)], true); else paintTabs(w);
+    nw.tab = t; activate(nw, t, false); focusWin(nw, true);
+    return nw;
+  }
+  function startTabDrag(w, t, e) {
+    const sx = e.clientX, sy = e.clientY; let nw = null;
+    const move = (ev) => {
+      if (!nw) {
+        if (w.tabs.length < 2 || Math.hypot(ev.clientX - sx, ev.clientY - sy) < 14) return;
+        const r = w.el.getBoundingClientRect(), out = ev.clientY > r.top + 100 || ev.clientY < r.top - 14 || ev.clientX < r.left - 24 || ev.clientX > r.right + 24;
+        if (!out) return;
+        nw = detach(w, t); if (!nw) return; root.classList.add("dk-dragging");
+      }
+      nw.g.x = Math.round(ev.clientX - nw.g.w / 2); nw.g.y = Math.max(MENU_H, Math.round(ev.clientY - 14)); apply(nw);
+    };
+    const up = () => { document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", up); document.removeEventListener("pointercancel", up); if (nw) { root.classList.remove("dk-dragging"); saveGeom(nw); } };
+    document.addEventListener("pointermove", move); document.addEventListener("pointerup", up); document.addEventListener("pointercancel", up);
+  }
+
+  // app.js sends every new tab here while desktop mode is on. Proxy tabs share one window; drag a tab out to give it a window of its own.
+  NV.desktopOpen = (opts) => {
+    const kind = opts.kind || "web";
+    let w = null;
+    if (kind === "web" && !opts.newWindow) { const open = wins.filter((x) => x.kind === "web"); w = (focused && focused.kind === "web" ? focused : topWin(open)) || null; }
+    const fresh = !w; if (fresh) w = makeWindow(kind);
+    const t = NV.newTab({ ...opts, host: w.body });
+    if (!t) { if (fresh) closeWin(w); return null; }
+    bindTab(w, t);
+    if (kind === "web") { w.tabs.push(t); activate(w, t, true); } else w.tab = t;
     t.onTitle(t.title); t.onSync(t);
     focusWin(w, true);
     return t;
@@ -284,7 +348,7 @@ html[data-pop] .dk-tile{background:linear-gradient(0deg,var(--accent),color-mix(
     const app = APPS.find((a) => a.id === id); if (!app) return;
     const open = wins.filter((w) => w.app.id === id);
     if (open.length && !forceNew) { focusWin(topWin(open)); return; }
-    if (app.kind === "web") NV.newTab({ kind: "web" }); else NV.openPage(app.kind);
+    if (app.kind === "web") NV.newTab({ kind: "web", newWindow: !!forceNew }); else NV.openPage(app.kind);
   }
 
   /* ---------- desktop icons: they sit on a grid. drag one and it jumps from cell to cell, never in between ---------- */
@@ -334,10 +398,10 @@ html[data-pop] .dk-tile{background:linear-gradient(0deg,var(--accent),color-mix(
           el.removeEventListener("pointermove", move); el.removeEventListener("pointerup", up); el.removeEventListener("pointercancel", up);
           box.classList.remove("snapping"); el.classList.remove("lift");
           if (moved) { const p = px(cell[0], cell[1]); saved[a.id] = { x: p.x, y: p.y }; LS.set("nexvelo.desk.icons", JSON.stringify(saved)); }
+          else launch(a.id);
         };
         el.addEventListener("pointermove", move); el.addEventListener("pointerup", up); el.addEventListener("pointercancel", up);
       });
-      el.addEventListener("dblclick", () => launch(a.id));
     });
   }
 
@@ -458,7 +522,10 @@ html[data-pop] .dk-tile{background:linear-gradient(0deg,var(--accent),color-mix(
     NV.onSettingsApps = () => { paintDock(); buildIcons(); };
   }
 
-  NV.desktopStart = () => { NV.desktopMode = true; document.body.classList.add("desktop"); build(); };
+  NV.desktopStart = () => {
+    NV.desktopMode = true; document.body.classList.add("desktop"); build();
+    for (const id of ["tabbar", "toolbar", "views"]) { const el = document.getElementById(id); if (el) { el.hidden = true; el.style.setProperty("display", "none", "important"); } } // the normal browser bars are not used here
+  };
   NV.desktopWindows = () => wins.map((w) => ({ kind: w.kind, min: w.min, max: w.max, focus: w === focused }));
   NV.desktopLoaded = true;
 })();
