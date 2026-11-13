@@ -66,6 +66,22 @@ try {
   console.warn(`Ultraviolet was not copied (${e.message}). Scramjet still works; the Ultraviolet option falls back to it.`);
 }
 
+// v86 (the x86 emulator behind Tools > virtual machine): copy its files into public/v86. Optional, like Ultraviolet.
+try {
+  const root = join("node_modules", "v86");
+  if (!existsSync(root)) throw new Error("v86 is not installed");
+  const all = readdirSync(root, { recursive: true }).filter((p) => !p.split(sep).includes("node_modules"));
+  mkdirSync(join("public", "v86"), { recursive: true });
+  const got = [];
+  for (const name of ["libv86.js", "v86.wasm", "seabios.bin", "vgabios.bin"]) {
+    const hit = all.filter((p) => p === name || p.endsWith(sep + name)).sort((a, b) => a.length - b.length)[0];
+    if (hit) { cpSync(join(root, hit), join("public", "v86", name)); got.push(name); }
+  }
+  console.log("v86 copied: " + (got.join(", ") || "nothing found") + (got.length < 4 ? " (missing files are loaded from jsDelivr instead)" : ""));
+} catch (e) {
+  console.warn(`v86 was not copied (${e.message}). The virtual machine tool loads it from jsDelivr instead.`);
+}
+
 // Print installed versions so mismatches are easy to spot in the build log
 for (const pkg of ["scramjet", "libcurl-transport", "bare-mux", "wisp-js"]) {
   try {
