@@ -1,5 +1,28 @@
 /* Wallpapers drawn as SVG so they work offline. Swap for photos any time via Settings > Appearance > custom. */
 
+/* Song length. A song that streams through the server has no known length, so the browser guesses it from what has arrived so far
+   (a 3:23 song first shows as 0:10 and grows). The music player already knows the real length from the search result, so when the
+   browser's guess is shorter than that, the real length is reported instead. This runs before music.js. */
+(() => {
+  const d = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "duration");
+  if (!d || !d.get) return;
+  Object.defineProperty(HTMLMediaElement.prototype, "duration", {
+    configurable: true,
+    get() {
+      const real = d.get.call(this);
+      try {
+        const src = this.currentSrc || this.src || "";
+        if (src.indexOf("/api/music/stream") >= 0) {
+          const id = new URL(src, location.href).searchParams.get("id");
+          const cur = (JSON.parse(localStorage.getItem("nexvelo.music") || "{}") || {}).cur;
+          if (cur && String(cur.id) === id && cur.dur > 0 && (!isFinite(real) || real < cur.dur - 3)) return cur.dur;
+        }
+      } catch {}
+      return real;
+    },
+  });
+})();
+
 /* Proxy engines. This runs before app.js, so it can hand app.js a controller that builds Ultraviolet frames when Ultraviolet is chosen
    (Settings > General > proxy engine, or the first-visit setup). Scramjet stays the default and the fallback. */
 (() => {
@@ -16,6 +39,33 @@
     }
     if (!self.__uv$config) throw new Error("Ultraviolet's config did not load");
   })());
+  /* Kaze (github.com/vqol/kaze): its files are built by the "Build Kaze" GitHub Action into public/kaze-assets and public/kaze-sw.js */
+  let kaze = null, kazeLoading = null;
+  const A = "/kaze-assets/";
+  const loadScripts = (...srcs) => Promise.all(srcs.map((src) => new Promise((ok, no) => { const el = document.createElement("script"); el.src = src; el.async = false; el.onload = ok; el.onerror = () => no(new Error("couldn't load " + src)); document.head.append(el); })));
+  const whenActive = (reg) => reg.active ? Promise.resolve(reg.active) : new Promise((ok) => { const wk = reg.installing || reg.waiting; wk.addEventListener("statechange", () => { if (wk.state === "activated") ok(wk); }); });
+  const loadKaze = () => (kazeLoading ||= (async () => {
+    if (!("serviceWorker" in navigator)) throw new Error("this browser has no service workers");
+    await loadScripts(A + "kaze.js", A + "controller.api.js");
+    const api = window.$kazeController; if (!api) throw new Error("Kaze's controller did not load");
+    let wisp = ""; try { wisp = JSON.parse(localStorage.getItem("nexvelo.settings") || "{}").wisp || ""; } catch {}
+    const transport = new api.WorkerTransport({ scripts: [A + "libcurl/index.js"], construct: "LibcurlTransport.LibcurlClient", options: { wisp: wisp || "wss://nex-velo.up.railway.app/wisp/" } });
+    api.warmupTransport(transport);
+    const reg = await navigator.serviceWorker.register("/kaze-sw.js", { scope: "/~/kz/", updateViaCache: "none" });
+    reg.update().catch(() => {});
+    const controller = new api.Controller({ serviceworker: await whenActive(reg), transport, config: { kazePath: A + "kaze.js", injectPath: A + "controller.inject.js", wasmPath: A + "kaze.wasm" } });
+    await controller.wait();
+    kaze = controller;
+  })());
+  const kazeFrame = () => {
+    const iframe = document.createElement("iframe"), f = kaze.createFrame(iframe);
+    return {
+      frame: iframe,
+      go(u) { f.go(String(u)); },
+      back() { f.back(); }, forward() { f.forward(); }, reload() { f.reload(); },
+      get url() { try { const h = iframe.contentWindow.location.href, at = h.indexOf(f.prefix); return at === -1 ? null : new URL(decodeURIComponent(h.slice(at + f.prefix.length))); } catch { return null; } },
+    };
+  };
   const uvFrame = () => {
     const frame = document.createElement("iframe"), cfg = () => self.__uv$config, base = () => location.origin + cfg().prefix;
     return {
@@ -29,13 +79,14 @@
     class WithEngines extends Base {
       async init(...a) {
         const r = await super.init(...a);
-        if (pick() === "uv") {
-          try { await loadUV(); }
-          catch (e) { failed = String(e.message || e); console.warn("[nex.velo] Ultraviolet unavailable:", failed); setTimeout(() => window.NV && NV.showBanner && NV.showBanner("couldn't load Ultraviolet (" + failed + "). Scramjet is being used instead."), 1500); }
+        const eng = pick();
+        if (eng === "uv" || eng === "kaze") {
+          try { await (eng === "uv" ? loadUV() : loadKaze()); }
+          catch (e) { failed = String(e.message || e); const nm = eng === "uv" ? "Ultraviolet" : "Kaze"; console.warn("[nex.velo] " + nm + " unavailable:", failed); setTimeout(() => window.NV && NV.showBanner && NV.showBanner("couldn't load " + nm + " (" + failed + "). Scramjet is being used instead."), 1500); }
         }
         return r;
       }
-      createFrame(...a) { return pick() === "uv" && !failed && self.__uv$config ? uvFrame() : super.createFrame(...a); }
+      createFrame(...a) { const e = pick(); return e === "uv" && !failed && self.__uv$config ? uvFrame() : e === "kaze" && !failed && kaze ? kazeFrame() : super.createFrame(...a); }
     }
     return Object.assign({}, out, { ScramjetController: WithEngines });
   };
@@ -171,7 +222,7 @@
     const engineBox = $("#engine");
     if (engineBox && !$("#proxy-engine")) {
       const fld = document.createElement("label"); fld.className = "fld";
-      fld.innerHTML = '<span>proxy engine</span><select id="proxy-engine"><option value="scramjet">Scramjet (default)</option><option value="uv">Ultraviolet</option></select>';
+      fld.innerHTML = '<span>proxy engine</span><select id="proxy-engine"><option value="scramjet">Scramjet (default)</option><option value="uv">Ultraviolet</option><option value="kaze">Kaze (needs the Build Kaze action)</option></select>';
       engineBox.closest("label").after(fld);
       const pe = fld.querySelector("select"); pe.value = NV.settings.proxy || "scramjet";
       pe.addEventListener("change", () => { NV.settings.proxy = pe.value; NV.save(); NV.toast("switching proxy engine…"); setTimeout(() => location.reload(), 400); });
