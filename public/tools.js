@@ -510,19 +510,655 @@ textarea.tl-ta:focus,.tl-in:focus{box-shadow:0 0 0 2px var(--focus)}
     dice: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h.01M15 9h.01M9 15h.01M15 15h.01M12 12h.01"/>',
     timer: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 3h6"/>',
   };
+  /* ===== more tools: flashcards, grades, citations, calculator, notes, to-do, converter, pomodoro, world clock, hash, picker, QR code, calendar, whiteboard, markdown, regex ===== */
+  const nst = document.createElement("style");
+  nst.textContent = `
+.nt-bar{display:flex;gap:.5rem;flex-wrap:wrap;justify-content:center;align-items:center}
+.nt-in{height:2.5rem;padding:0 .875rem;border:0;border-radius:.75rem;background:var(--btn);color:var(--fg);font:inherit;font-size:.875rem;outline:none;min-width:0}
+.nt-in:focus{box-shadow:0 0 0 2px var(--focus,rgba(128,128,128,.4))}
+select.nt-in{cursor:pointer}.nt-in option{background:var(--panel)}
+.nt-grow{flex:1;min-width:8rem}.nt-num{width:5.5rem}
+.nt-list{display:flex;flex-direction:column;gap:.375rem;text-align:left}
+.nt-item{display:flex;gap:.5rem;align-items:center;padding:.5rem .625rem;border-radius:.75rem;background:var(--btn)}
+.nt-item>span{flex:1;min-width:0;overflow-wrap:anywhere}.nt-item.done>span{text-decoration:line-through;opacity:.55}
+.nt-item input[type=checkbox]{width:1.125rem;height:1.125rem;accent-color:var(--accent)}
+.nt-x{width:1.75rem;height:1.75rem;border-radius:50%;line-height:1;flex:none;color:var(--dim)}
+.nt-big{font-size:2.25rem;font-weight:300;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.nt-card3d{min-height:11rem;display:flex;align-items:center;justify-content:center;padding:1.5rem;border-radius:1.125rem;background:var(--btn);font-size:1.25rem;line-height:1.4;cursor:pointer;overflow-wrap:anywhere;user-select:none}
+.nt-cal{display:grid;grid-template-columns:repeat(7,1fr);gap:.25rem}
+.nt-cal b{font-size:.6875rem;font-weight:500;color:var(--dim);padding:.25rem 0}
+.nt-day{height:2.5rem;border-radius:.625rem;background:var(--btn);font-size:.8125rem;padding:0}.nt-day.off{opacity:.3}
+.nt-day.today{box-shadow:inset 0 0 0 2px var(--accent)}.nt-day.sel{background:var(--accent);color:var(--accent-fg)}
+.nt-keys{display:grid;grid-template-columns:repeat(5,1fr);gap:.375rem}
+.nt-keys .btn{padding:0;min-height:2.75rem;font-size:.9375rem}
+.nt-disp{text-align:right;padding:.75rem 1rem;border-radius:.875rem;background:var(--btn);overflow:hidden}
+.nt-disp input{width:100%;background:none;border:0;outline:none;color:var(--fg);font:inherit;font-size:1.25rem;text-align:right}
+.nt-disp div{font-size:1.75rem;font-weight:300;min-height:2.25rem;overflow-wrap:anywhere}
+.nt-md{text-align:left;padding:.75rem 1rem;border-radius:.875rem;background:var(--btn);min-height:9rem;line-height:1.6;overflow-wrap:anywhere}
+.nt-md h1,.nt-md h2,.nt-md h3{margin:.5rem 0;line-height:1.25}.nt-md code{background:color-mix(in srgb,var(--fg) 12%,transparent);padding:.1rem .3rem;border-radius:.3rem}
+.nt-md pre{background:color-mix(in srgb,var(--fg) 10%,transparent);padding:.625rem;border-radius:.625rem;overflow:auto}.nt-md pre code{background:none;padding:0}
+.nt-md blockquote{margin:.5rem 0;padding-left:.75rem;border-left:3px solid var(--accent)}.nt-md a{color:var(--accent)}.nt-md hr{border:0;border-top:1px solid var(--dim);opacity:.4}
+.nt-two{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}@media (max-width:720px){.nt-two{grid-template-columns:1fr}}
+.nt-mark{background:var(--accent);color:var(--accent-fg);border-radius:.2rem}
+.nt-pre{white-space:pre-wrap;overflow-wrap:anywhere;text-align:left;padding:.75rem 1rem;border-radius:.875rem;background:var(--btn);font-size:.875rem;line-height:1.6;min-height:3rem}
+#wb{width:100%;border-radius:.875rem;background:#fff;touch-action:none;cursor:crosshair;display:block}
+.nt-cite{text-align:left;padding:.875rem 1rem;border-radius:.875rem;background:var(--btn);line-height:1.6;overflow-wrap:anywhere}
+`;
+  document.head.appendChild(nst);
+  Object.assign(IC, {
+    flash: '<rect x="3" y="6" width="14" height="11" rx="2"/><path d="M7 3h12a2 2 0 0 1 2 2v9"/>',
+    grade: '<path d="M2 9l10-5 10 5-10 5z"/><path d="M6 11.5V16c3 2 9 2 12 0v-4.5"/>',
+    cite: '<path d="M7 7h3v4c0 2-1 3-3 3M14 7h3v4c0 2-1 3-3 3"/>',
+    calc: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01"/>',
+    note: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/>',
+    todo: '<path d="M4 7l2 2 3-3M4 17l2 2 3-3M12 8h8M12 18h8"/>',
+    convert: '<path d="M4 8h14l-3-3M20 16H6l3 3"/>',
+    world: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>',
+    hash: '<path d="M5 9h14M5 15h14M10 4L8 20M16 4l-2 16"/>',
+    pick: '<path d="M4 6h10M4 12h10M4 18h6M17 14l3 3-3 3M20 17h-6"/>',
+    qr: '<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="M14 14h2v2h-2zM18 14h2M14 18h2M18 18h2v2"/>',
+    cal: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',
+    board: '<path d="M4 20l1-4L16 5l3 3L8 19z"/>',
+    md: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15V9l2.5 3L12 9v6M16 9v6m0 0l-2-2m2 2l2-2"/>',
+    regex: '<path d="M6 6v.01M6 18l2-6M14 5l6 8M20 5l-6 8"/>',
+    vm: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+    term: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/>',
+  });
+  const kv = (k, d) => { try { const v = JSON.parse(NV.LS.get("nexvelo.tools." + k, "")); return v == null ? d : v; } catch { return d; } };
+  const sv = (k, v) => NV.LS.set("nexvelo.tools." + k, JSON.stringify(v));
+  const num = (v) => (v === "" || v == null || isNaN(+v) ? NaN : +v);
+  const fmtN = (n) => (isFinite(n) ? String(+n.toPrecision(12)) : "error");
+  const html = (s) => esc(s);
+
+  /* ---------- flashcards ---------- */
+  function mountFlash(root) {
+    let decks = kv("flash", [{ name: "my first deck", cards: [] }]), di = 0, ci = 0, shown = false, order = null;
+    const draw = () => {
+      const d = decks[di], idx = order || d.cards.map((_, i) => i), card = d.cards[idx[ci]];
+      root.innerHTML = `<div class="tl-card"><div class="nt-bar"><select class="nt-in" id="fd">${decks.map((x, i) => `<option value="${i}"${i === di ? " selected" : ""}>${esc(x.name)} (${x.cards.length})</option>`).join("")}</select><button class="btn" id="fnew">new deck</button><button class="btn danger" id="fdel">delete deck</button></div>
+${card ? `<div class="nt-card3d" id="fc">${esc(shown ? card.a : card.q)}</div><small style="color:var(--dim)">${shown ? "answer" : "question"} · card ${ci + 1} of ${idx.length} · tap the card to flip</small>
+<div class="nt-bar"><button class="btn" id="fp">previous</button><button class="btn" id="fs">shuffle</button><button class="btn" id="fn">next</button></div>` : '<div class="msg">this deck is empty. add a card below.</div>'}
+<div class="nt-bar"><input class="nt-in nt-grow" id="fq" placeholder="front (question)"><input class="nt-in nt-grow" id="fa" placeholder="back (answer)"><button class="btn primary" id="fadd">add card</button></div>
+<div class="nt-list">${d.cards.map((c, i) => `<div class="nt-item"><span><b>${esc(c.q)}</b> · ${esc(c.a)}</span><button class="btn nt-x" data-rm="${i}" aria-label="Remove card">×</button></div>`).join("")}</div></div>`;
+    };
+    const go = (n) => { const len = (order || decks[di].cards).length; if (!len) return; ci = (ci + n + len) % len; shown = false; draw(); };
+    root.addEventListener("click", (e) => {
+      const t = e.target, q = (s) => t.closest(s);
+      if (q("#fc")) { shown = !shown; draw(); }
+      else if (q("#fn")) go(1); else if (q("#fp")) go(-1);
+      else if (q("#fs")) { order = decks[di].cards.map((_, i) => i).sort(() => Math.random() - 0.5); ci = 0; shown = false; draw(); }
+      else if (q("#fnew")) { const n = prompt("name of the new deck"); if (n && n.trim()) { decks.push({ name: n.trim().slice(0, 40), cards: [] }); di = decks.length - 1; ci = 0; order = null; sv("flash", decks); draw(); } }
+      else if (q("#fdel")) { if (confirm("delete this deck?")) { decks.splice(di, 1); if (!decks.length) decks.push({ name: "my first deck", cards: [] }); di = 0; ci = 0; order = null; sv("flash", decks); draw(); } }
+      else if (q("#fadd")) { const a = root.querySelector("#fq").value.trim(), b = root.querySelector("#fa").value.trim(); if (a && b) { decks[di].cards.push({ q: a, a: b }); order = null; sv("flash", decks); draw(); root.querySelector("#fq").focus(); } }
+      else if (q("[data-rm]")) { decks[di].cards.splice(+q("[data-rm]").dataset.rm, 1); order = null; ci = 0; sv("flash", decks); draw(); }
+    });
+    root.addEventListener("change", (e) => { if (e.target.id === "fd") { di = +e.target.value; ci = 0; shown = false; order = null; draw(); } });
+    draw();
+  }
+
+  /* ---------- grade calculator ---------- */
+  function mountGrades(root) {
+    const LET = [["A+", 4], ["A", 4], ["A-", 3.7], ["B+", 3.3], ["B", 3], ["B-", 2.7], ["C+", 2.3], ["C", 2], ["C-", 1.7], ["D+", 1.3], ["D", 1], ["F", 0]];
+    let rows = kv("grades", [{ n: "homework", g: "", w: "" }, { n: "exam", g: "", w: "" }]), gp = kv("gpa", [{ l: "A", c: 3 }, { l: "B", c: 3 }]), tab = "weighted";
+    const letter = (p) => (p >= 90 ? "A" : p >= 80 ? "B" : p >= 70 ? "C" : p >= 60 ? "D" : "F");
+    const draw = () => {
+      let body = "";
+      if (tab === "weighted") {
+        let sw = 0, sg = 0; rows.forEach((r) => { const g = num(r.g), w = num(r.w); if (!isNaN(g) && !isNaN(w)) { sw += w; sg += g * w; } });
+        body = `<div class="nt-list">${rows.map((r, i) => `<div class="nt-item"><input class="nt-in nt-grow" data-f="n" data-i="${i}" value="${esc(r.n)}" placeholder="name"><input class="nt-in nt-num" data-f="g" data-i="${i}" value="${esc(r.g)}" placeholder="grade %" inputmode="decimal"><input class="nt-in nt-num" data-f="w" data-i="${i}" value="${esc(r.w)}" placeholder="weight %" inputmode="decimal"><button class="btn nt-x" data-rm="${i}" aria-label="Remove">×</button></div>`).join("")}</div>
+<div class="nt-bar"><button class="btn" id="gadd">add a row</button></div>
+<div class="nt-out"><div><span class="nt-big">${sw ? fmtN(Math.round(sg / sw * 100) / 100) + "%" : "–"}</span><br><small>${sw ? "letter " + letter(sg / sw) + " · total weight " + fmtN(sw) + "%" + (Math.abs(sw - 100) > 0.01 ? " (weights usually add to 100)" : "") : "enter grades and weights"}</small></div></div>`;
+      } else if (tab === "final") {
+        const s = kv("final", { c: "", t: "", w: "" }), c = num(s.c), t = num(s.t), w = num(s.w), need = (t - c * (1 - w / 100)) / (w / 100);
+        body = `<div class="nt-bar"><input class="nt-in nt-num" id="fc1" value="${esc(s.c)}" placeholder="current %" inputmode="decimal"><input class="nt-in nt-num" id="fc2" value="${esc(s.t)}" placeholder="goal %" inputmode="decimal"><input class="nt-in nt-num" id="fc3" value="${esc(s.w)}" placeholder="final weight %" inputmode="decimal"></div>
+<div class="nt-out"><div><span class="nt-big">${isNaN(need) || !isFinite(need) ? "–" : fmtN(Math.round(need * 100) / 100) + "%"}</span><br><small>${isNaN(need) || !isFinite(need) ? "what you need on the final to reach your goal" : need > 100 ? "that is above 100%, so this goal may be out of reach" : need < 0 ? "you already have it, whatever you score" : "score needed on the final exam"}</small></div></div>`;
+      } else {
+        let cr = 0, pts = 0; gp.forEach((r) => { const c = num(r.c), v = (LET.find((x) => x[0] === r.l) || [0, 0])[1]; if (!isNaN(c)) { cr += c; pts += c * v; } });
+        body = `<div class="nt-list">${gp.map((r, i) => `<div class="nt-item"><select class="nt-in nt-grow" data-gl="${i}">${LET.map((x) => `<option${x[0] === r.l ? " selected" : ""}>${x[0]}</option>`).join("")}</select><input class="nt-in nt-num" data-gc="${i}" value="${esc(r.c)}" placeholder="credits" inputmode="decimal"><button class="btn nt-x" data-grm="${i}" aria-label="Remove">×</button></div>`).join("")}</div>
+<div class="nt-bar"><button class="btn" id="gpadd">add a course</button></div><div class="nt-out"><div><span class="nt-big">${cr ? (pts / cr).toFixed(2) : "–"}</span><br><small>GPA on a 4.0 scale</small></div></div>`;
+      }
+      root.innerHTML = `<div class="tl-card"><div class="mtabs" style="align-self:center"><button data-t="weighted" class="${tab === "weighted" ? "on" : ""}">weighted grade</button><button data-t="final" class="${tab === "final" ? "on" : ""}">final score</button><button data-t="gpa" class="${tab === "gpa" ? "on" : ""}">GPA</button></div>${body}</div>`;
+    };
+    const keep = (e) => { const a = document.activeElement, id = a && (a.id || a.dataset.f + a.dataset.i + (a.dataset.gc || "")), pos = a && a.selectionStart; draw(); if (a) { const n = root.querySelector(a.id ? "#" + a.id : a.dataset.f ? `[data-f="${a.dataset.f}"][data-i="${a.dataset.i}"]` : a.dataset.gc != null ? `[data-gc="${a.dataset.gc}"]` : "x"); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch {} } } };
+    root.addEventListener("input", (e) => {
+      const t = e.target;
+      if (t.dataset.f) { rows[+t.dataset.i][t.dataset.f] = t.value; sv("grades", rows); keep(); }
+      else if (t.id && t.id.startsWith("fc")) { const s = kv("final", { c: "", t: "", w: "" }); s[{ fc1: "c", fc2: "t", fc3: "w" }[t.id]] = t.value; sv("final", s); keep(); }
+      else if (t.dataset.gc != null) { gp[+t.dataset.gc].c = t.value; sv("gpa", gp); keep(); }
+    });
+    root.addEventListener("change", (e) => { if (e.target.dataset.gl != null) { gp[+e.target.dataset.gl].l = e.target.value; sv("gpa", gp); draw(); } });
+    root.addEventListener("click", (e) => {
+      const q = (s) => e.target.closest(s);
+      if (q("[data-t]")) { tab = q("[data-t]").dataset.t; draw(); }
+      else if (q("#gadd")) { rows.push({ n: "", g: "", w: "" }); sv("grades", rows); draw(); }
+      else if (q("[data-rm]")) { rows.splice(+q("[data-rm]").dataset.rm, 1); sv("grades", rows); draw(); }
+      else if (q("#gpadd")) { gp.push({ l: "A", c: 3 }); sv("gpa", gp); draw(); }
+      else if (q("[data-grm]")) { gp.splice(+q("[data-grm]").dataset.grm, 1); sv("gpa", gp); draw(); }
+    });
+    draw();
+  }
+
+  /* ---------- citations (MLA 9 and APA 7) ---------- */
+  function mountCite(root) {
+    const MON = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    root.innerHTML = `<div class="tl-card"><div class="nt-bar"><select class="nt-in" id="ct"><option value="web">website</option><option value="book">book</option><option value="article">journal article</option></select><select class="nt-in" id="cs"><option value="mla">MLA 9</option><option value="apa">APA 7</option></select></div>
+<textarea class="tl-ta" id="cau" placeholder="authors, one per line (First Last). leave empty if none" style="min-height:4.5rem"></textarea>
+<input class="nt-in" id="cti" placeholder="title"><input class="nt-in" id="cco" placeholder="website name"><input class="nt-in" id="cpu" placeholder="publisher" hidden>
+<div class="nt-bar"><input class="nt-in nt-num" id="cy" placeholder="year" inputmode="numeric"><select class="nt-in" id="cm"><option value="">month</option>${MON.map((m, i) => `<option value="${i}">${m}</option>`).join("")}</select><input class="nt-in nt-num" id="cd" placeholder="day" inputmode="numeric"></div>
+<div class="nt-bar" id="cjr" hidden><input class="nt-in nt-num" id="cv" placeholder="volume"><input class="nt-in nt-num" id="ci" placeholder="issue"><input class="nt-in nt-num" id="cp" placeholder="pages"></div>
+<input class="nt-in" id="cu" placeholder="web address (URL)" autocomplete="off" spellcheck="false">
+<div class="nt-cite" id="cout"></div><div class="row"><button class="btn primary" id="ccopy">copy citation</button></div></div>`;
+    const q = (s) => root.querySelector(s), v = (s) => q(s).value.trim();
+    const names = () => v("#cau").split(/\n/).map((s) => s.trim()).filter(Boolean).map((n) => { const p = n.split(/\s+/); return { last: p.length > 1 ? p[p.length - 1] : p[0], first: p.length > 1 ? p.slice(0, -1).join(" ") : "" }; });
+    const ini = (f) => f.split(/[\s-]+/).filter(Boolean).map((x) => x[0].toUpperCase() + ".").join(" ");
+    const end = (s) => (/[.?!]$/.test(s) ? s : s + ".");
+    function build() {
+      const type = v("#ct"), style = v("#cs"), a = names(), ti = v("#cti"), co = v("#cco"), pu = v("#cpu"), y = v("#cy"), m = v("#cm"), d = v("#cd"), vo = v("#cv"), is = v("#ci"), pg = v("#cp"), url = v("#cu").replace(/^https?:\/\//, style === "mla" ? "" : "https://");
+      const mon = m === "" ? "" : MON[+m], monS = mon ? mon.slice(0, 3) + (mon.length > 3 && mon !== "May" && mon !== "June" && mon !== "July" ? "." : "") : "";
+      let au = "";
+      if (style === "mla") au = !a.length ? "" : a.length === 1 ? end(a[0].last + (a[0].first ? ", " + a[0].first : "")) : a.length === 2 ? end(a[0].last + ", " + a[0].first + ", and " + a[1].first + " " + a[1].last) : end(a[0].last + ", " + a[0].first + ", et al");
+      else au = !a.length ? "" : (a.length > 2 ? a.slice(0, -1).map((x) => x.last + ", " + ini(x.first)).join(", ") + ", & " : a.length === 2 ? a[0].last + ", " + ini(a[0].first) + ", & " : "") + (a.length === 1 ? a[0].last + ", " + ini(a[0].first) : a[a.length - 1].last + ", " + ini(a[a.length - 1].first));
+      if (style === "apa" && au) au = end(au);
+      const parts = [];
+      if (style === "mla") {
+        if (au) parts.push(au);
+        const date = [d, monS, y].filter(Boolean).join(" ");
+        if (type === "web") { parts.push(`“${end(ti || "title")}”`); const tail = [co ? "<i>" + esc(co) + "</i>" : "", pu, date, url].filter(Boolean).join(", "); if (tail) parts.push(end(tail)); }
+        else if (type === "book") { parts.push("<i>" + esc(end(ti || "title")) + "</i>"); const tail = [pu, y].filter(Boolean).join(", "); if (tail) parts.push(end(tail)); }
+        else { parts.push(`“${end(ti || "title")}”`); const tail = [co ? "<i>" + esc(co) + "</i>" : "", vo ? "vol. " + vo : "", is ? "no. " + is : "", y, pg ? "pp. " + pg : "", url].filter(Boolean).join(", "); if (tail) parts.push(end(tail)); }
+      } else {
+        const date = y ? "(" + [y, mon, d].filter(Boolean).join(", ").replace(/, (\w+), (\d+)$/, ", $1 $2") + ")." : "(n.d.).";
+        parts.push(au ? au + " " + date : "");
+        if (!au) parts.length = 0;
+        if (!au) parts.push(esc(end(ti || "title")) + " " + date); else parts.push(type === "book" ? "<i>" + esc(end(ti || "title")) + "</i>" : esc(end(ti || "title")));
+        if (type === "web" && co) parts.push(esc(end(co)) );
+        if (type === "book" && pu) parts.push(esc(end(pu)));
+        if (type === "article") parts.push([co ? "<i>" + esc(co) + "</i>" : "", vo ? "<i>" + esc(vo) + "</i>" + (is ? "(" + esc(is) + ")" : "") : "", pg].filter(Boolean).join(", ") + ".");
+        if (url) parts.push(url);
+      }
+      return parts.filter(Boolean).join(" ");
+    }
+    const upd = () => { const t = v("#ct"); q("#cco").hidden = t === "book"; q("#cpu").hidden = t !== "book" && !(t === "web" && v("#cs") === "mla"); q("#cco").placeholder = t === "article" ? "journal name" : "website name"; q("#cjr").hidden = t !== "article"; q("#cout").innerHTML = build() || "fill in the details above"; };
+    root.addEventListener("input", upd); root.addEventListener("change", upd);
+    q("#ccopy").addEventListener("click", (e) => copy(q("#cout").textContent, e.currentTarget));
+    upd();
+  }
+
+  /* ---------- scientific calculator ---------- */
+  function calcEval(src, deg, ans) {
+    const s = String(src).replace(/×/g, "*").replace(/÷/g, "/").replace(/−/g, "-").replace(/π/g, "pi").replace(/√/g, "sqrt").replace(/\s+/g, "");
+    let i = 0;
+    const FN = { sin: Math.sin, cos: Math.cos, tan: Math.tan, asin: Math.asin, acos: Math.acos, atan: Math.atan, sinh: Math.sinh, cosh: Math.cosh, tanh: Math.tanh, ln: Math.log, log: Math.log10, log2: Math.log2, sqrt: Math.sqrt, cbrt: Math.cbrt, abs: Math.abs, exp: Math.exp, floor: Math.floor, ceil: Math.ceil, round: Math.round };
+    const toR = (x) => (deg ? x * Math.PI / 180 : x), fromR = (x) => (deg ? x * 180 / Math.PI : x);
+    const fact = (n) => { if (n < 0 || n !== Math.floor(n) || n > 170) return NaN; let r = 1; for (let k = 2; k <= n; k++) r *= k; return r; };
+    const peek = () => s[i];
+    function expr() { let v = term(); while (peek() === "+" || peek() === "-") { const o = s[i++]; const r = term(); v = o === "+" ? v + r : v - r; } return v; }
+    function term() { let v = unary(); while (peek() === "*" || peek() === "/" || peek() === "(" || /[a-z]/i.test(peek() || "") ) { if (peek() === "*" || peek() === "/") { const o = s[i++]; const r = unary(); v = o === "*" ? v * r : v / r; } else v *= unary(); } return v; }
+    function unary() { if (peek() === "-") { i++; return -unary(); } if (peek() === "+") { i++; return unary(); } return power(); }
+    function power() { let b = post(); if (peek() === "^") { i++; const e = unary(); b = Math.pow(b, e); } return b; }
+    function post() { let v = primary(); for (;;) { if (peek() === "!") { i++; v = fact(v); } else if (peek() === "%") { i++; v /= 100; } else break; } return v; }
+    function primary() {
+      const c = peek();
+      if (c === "(") { i++; const v = expr(); if (peek() !== ")") throw new Error("missing )"); i++; return v; }
+      let m = /^(\d+\.?\d*|\.\d+)(e[+-]?\d+)?/i.exec(s.slice(i));
+      if (m) { i += m[0].length; return parseFloat(m[0]); }
+      m = /^[a-z][a-z0-9]*/i.exec(s.slice(i));
+      if (m) {
+        const n = m[0].toLowerCase(); i += n.length;
+        if (n === "pi") return Math.PI; if (n === "e") return Math.E; if (n === "ans") return ans || 0;
+        if (n === "rad" || n === "deg") throw new Error("unknown word " + n);
+        if (FN[n]) { if (peek() !== "(") throw new Error(n + " needs ( )"); i++; const a = expr(); if (peek() !== ")") throw new Error("missing )"); i++; const f = FN[n]; return /^a(sin|cos|tan)$/.test(n) ? fromR(f(a)) : /^(sin|cos|tan)$/.test(n) ? f(toR(a)) : f(a); }
+        throw new Error("unknown word " + n);
+      }
+      throw new Error("unexpected " + (c || "end"));
+    }
+    if (!s) return NaN;
+    const v = expr(); if (i < s.length) throw new Error("unexpected " + s[i]); return v;
+  }
+  function mountCalc(root, own) {
+    const KEYS = [["Rad", "mode"], ["(", "("], [")", ")"], ["⌫", "bk"], ["C", "clr"], ["sin", "sin("], ["cos", "cos("], ["tan", "tan("], ["ln", "ln("], ["log", "log("], ["√", "sqrt("], ["x²", "^2"], ["xʸ", "^"], ["n!", "!"], ["π", "π"], ["7", "7"], ["8", "8"], ["9", "9"], ["÷", "÷"], ["e", "e"], ["4", "4"], ["5", "5"], ["6", "6"], ["×", "×"], ["Ans", "ans"], ["1", "1"], ["2", "2"], ["3", "3"], ["−", "−"], ["%", "%"], ["0", "0"], [".", "."], ["=", "eq"], ["+", "+"]];
+    let deg = false, ans = 0, hist = kv("calc", []);
+    root.innerHTML = `<div class="tl-card"><div class="nt-disp"><input id="cx" placeholder="type or tap, e.g. sin(30)+2^3" autocomplete="off" spellcheck="false"><div id="cr"></div></div><div class="nt-keys">${KEYS.map(([l, k]) => `<button class="btn" data-k="${esc(k)}" type="button">${esc(l)}</button>`).join("")}</div><div class="nt-list" id="ch"></div></div>`;
+    const q = (s) => root.querySelector(s), inp = q("#cx");
+    const live = () => { try { const v = calcEval(inp.value, deg, ans); q("#cr").textContent = inp.value && isFinite(v) ? "= " + fmtN(v) : ""; } catch { q("#cr").textContent = ""; } };
+    const showHist = () => { q("#ch").innerHTML = hist.slice(-5).reverse().map((h) => `<div class="nt-item"><span>${esc(h[0])} = <b>${esc(h[1])}</b></span></div>`).join(""); };
+    function equals() { try { const v = calcEval(inp.value, deg, ans); if (!isFinite(v)) throw new Error("not a number"); hist.push([inp.value, fmtN(v)]); hist = hist.slice(-30); sv("calc", hist); ans = v; q("#cr").textContent = "= " + fmtN(v); inp.value = fmtN(v); showHist(); } catch (e) { q("#cr").textContent = String(e.message || e); } }
+    root.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-k]"); if (!b) return; const k = b.dataset.k;
+      if (k === "mode") { deg = !deg; b.textContent = deg ? "Deg" : "Rad"; live(); }
+      else if (k === "clr") { inp.value = ""; q("#cr").textContent = ""; }
+      else if (k === "bk") { inp.value = inp.value.slice(0, -1); live(); }
+      else if (k === "eq") equals();
+      else { inp.value += k; live(); }
+      inp.focus();
+    });
+    inp.addEventListener("input", live);
+    inp.addEventListener("keydown", (e) => { if (e.key === "Enter") equals(); });
+    showHist(); inp.focus();
+  }
+
+  /* ---------- notes ---------- */
+  function mountNotes(root) {
+    root.innerHTML = `<div class="tl-card"><textarea class="tl-ta" id="nt" style="min-height:20rem" placeholder="start typing. it saves by itself" spellcheck="true"></textarea><div class="nt-bar"><small id="ns" style="color:var(--dim)"></small><button class="btn" id="nc">copy</button><button class="btn" id="nd">download .txt</button><button class="btn danger" id="nx">clear</button></div></div>`;
+    const q = (s) => root.querySelector(s), ta = q("#nt"); ta.value = kv("notes", "");
+    const info = () => { q("#ns").textContent = ta.value.length + " characters · saved"; };
+    ta.addEventListener("input", () => { sv("notes", ta.value); info(); });
+    q("#nc").addEventListener("click", (e) => copy(ta.value, e.currentTarget));
+    q("#nd").addEventListener("click", () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([ta.value], { type: "text/plain" })); a.download = "notes.txt"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1500); });
+    q("#nx").addEventListener("click", () => { if (!ta.value || confirm("clear the notes?")) { ta.value = ""; sv("notes", ""); info(); } });
+    info();
+  }
+
+  /* ---------- to-do ---------- */
+  function mountTodo(root) {
+    let items = kv("todo", []);
+    const draw = () => {
+      root.innerHTML = `<div class="tl-card"><form class="nt-bar" id="tf"><input class="nt-in nt-grow" id="ti" placeholder="add a task" autocomplete="off"><button class="btn primary" type="submit">add</button></form><div class="nt-list">${items.map((t, i) => `<div class="nt-item${t.d ? " done" : ""}"><input type="checkbox" data-c="${i}"${t.d ? " checked" : ""}><span>${esc(t.t)}</span><button class="btn nt-x" data-r="${i}" aria-label="Remove">×</button></div>`).join("") || '<div class="msg">nothing to do. enjoy.</div>'}</div><div class="nt-bar"><small style="color:var(--dim)">${items.filter((t) => !t.d).length} left of ${items.length}</small><button class="btn" id="tc">clear finished</button></div></div>`;
+      root.querySelector("#ti").focus();
+    };
+    root.addEventListener("submit", (e) => { e.preventDefault(); const v = root.querySelector("#ti").value.trim(); if (v) { items.push({ t: v.slice(0, 200), d: false }); sv("todo", items); draw(); } });
+    root.addEventListener("click", (e) => { const r = e.target.closest("[data-r]"), c = e.target.closest("#tc"); if (r) { items.splice(+r.dataset.r, 1); sv("todo", items); draw(); } else if (c) { items = items.filter((t) => !t.d); sv("todo", items); draw(); } });
+    root.addEventListener("change", (e) => { if (e.target.dataset.c != null) { items[+e.target.dataset.c].d = e.target.checked; sv("todo", items); draw(); } });
+    draw();
+  }
+
+  /* ---------- unit converter ---------- */
+  function mountConvert(root) {
+    const U = {
+      length: [["metre", 1], ["kilometre", 1000], ["centimetre", 0.01], ["millimetre", 0.001], ["mile", 1609.344], ["yard", 0.9144], ["foot", 0.3048], ["inch", 0.0254], ["nautical mile", 1852]],
+      mass: [["kilogram", 1], ["gram", 0.001], ["milligram", 1e-6], ["tonne", 1000], ["pound", 0.45359237], ["ounce", 0.028349523125], ["stone", 6.35029318]],
+      volume: [["litre", 1], ["millilitre", 0.001], ["cubic metre", 1000], ["US gallon", 3.785411784], ["US quart", 0.946352946], ["US cup", 0.2365882365], ["US fluid ounce", 0.0295735295625], ["tablespoon", 0.01478676478125], ["teaspoon", 0.00492892159375]],
+      area: [["square metre", 1], ["square kilometre", 1e6], ["hectare", 1e4], ["acre", 4046.8564224], ["square foot", 0.09290304], ["square inch", 0.00064516], ["square mile", 2589988.110336]],
+      speed: [["metre/second", 1], ["kilometre/hour", 1 / 3.6], ["mile/hour", 0.44704], ["knot", 0.514444444], ["foot/second", 0.3048]],
+      time: [["second", 1], ["minute", 60], ["hour", 3600], ["day", 86400], ["week", 604800], ["year (365 days)", 31536000]],
+      data: [["byte", 1], ["kilobyte", 1e3], ["megabyte", 1e6], ["gigabyte", 1e9], ["terabyte", 1e12], ["kibibyte", 1024], ["mebibyte", 1048576], ["gibibyte", 1073741824], ["bit", 0.125]],
+      energy: [["joule", 1], ["kilojoule", 1000], ["calorie", 4.184], ["kilocalorie", 4184], ["watt-hour", 3600], ["kilowatt-hour", 3.6e6]],
+      temperature: [["celsius"], ["fahrenheit"], ["kelvin"]],
+    };
+    const s = kv("conv", { c: "length", f: 0, t: 1, v: "1" });
+    const opts = (c, sel) => U[c].map((u, i) => `<option value="${i}"${i === sel ? " selected" : ""}>${u[0]}</option>`).join("");
+    root.innerHTML = `<div class="tl-card"><select class="nt-in" id="uc">${Object.keys(U).map((c) => `<option${c === s.c ? " selected" : ""}>${c}</option>`).join("")}</select>
+<div class="nt-bar"><input class="nt-in nt-grow" id="uv" value="${esc(s.v)}" inputmode="decimal"><select class="nt-in nt-grow" id="uf">${opts(s.c, s.f)}</select></div>
+<div class="nt-bar"><button class="btn" id="us">swap</button></div>
+<div class="nt-bar"><div class="nt-out nt-grow"><div><span class="nt-big" id="ur">–</span></div></div><select class="nt-in nt-grow" id="ut">${opts(s.c, s.t)}</select></div></div>`;
+    const q = (x) => root.querySelector(x);
+    const toC = (v, u) => (u === 0 ? v : u === 1 ? (v - 32) * 5 / 9 : v - 273.15), fromC = (c, u) => (u === 0 ? c : u === 1 ? c * 9 / 5 + 32 : c + 273.15);
+    function calc() {
+      const c = q("#uc").value, v = num(q("#uv").value.replace(",", ".")), f = +q("#uf").value, t = +q("#ut").value;
+      Object.assign(s, { c, f, t, v: q("#uv").value }); sv("conv", s);
+      if (isNaN(v)) { q("#ur").textContent = "–"; return; }
+      q("#ur").textContent = fmtN(c === "temperature" ? fromC(toC(v, f), t) : v * U[c][f][1] / U[c][t][1]);
+    }
+    q("#uc").addEventListener("change", () => { const c = q("#uc").value; q("#uf").innerHTML = opts(c, 0); q("#ut").innerHTML = opts(c, Math.min(1, U[c].length - 1)); calc(); });
+    root.addEventListener("input", calc); root.addEventListener("change", calc);
+    q("#us").addEventListener("click", () => { const f = q("#uf").value; q("#uf").value = q("#ut").value; q("#ut").value = f; calc(); });
+    calc();
+  }
+
+  /* ---------- pomodoro ---------- */
+  function mountPomo(root, own) {
+    const cfg = kv("pomo", { f: 25, s: 5, l: 15 });
+    let mode = "f", left = cfg.f * 60, end = 0, run = false, done = kv("pomoDone", 0), cycle = 0, iv = 0;
+    root.innerHTML = `<div class="tl-card"><div class="mtabs" style="align-self:center"><button data-m="f" class="on">focus</button><button data-m="s">short break</button><button data-m="l">long break</button></div><div class="nt-big" id="pt" style="font-size:4rem"></div>
+<div class="nt-bar"><button class="btn primary" id="pg">start</button><button class="btn" id="pr">reset</button><button class="btn" id="pk">skip</button></div>
+<small id="pn" style="color:var(--dim)"></small>
+<div class="nt-bar"><label class="fld"><span>focus (min)</span><input class="nt-in nt-num" data-c="f" value="${cfg.f}" inputmode="numeric"></label><label class="fld"><span>short break</span><input class="nt-in nt-num" data-c="s" value="${cfg.s}" inputmode="numeric"></label><label class="fld"><span>long break</span><input class="nt-in nt-num" data-c="l" value="${cfg.l}" inputmode="numeric"></label></div></div>`;
+    const q = (s) => root.querySelector(s), mm = (n) => String(Math.floor(n / 60)).padStart(2, "0") + ":" + String(Math.floor(n % 60)).padStart(2, "0");
+    const beep = () => { try { const a = new (window.AudioContext || window.webkitAudioContext)(), o = a.createOscillator(), g = a.createGain(); o.connect(g); g.connect(a.destination); g.gain.value = 0.15; o.frequency.value = 880; o.start(); o.stop(a.currentTime + 0.35); } catch {} };
+    const paint = () => { q("#pt").textContent = mm(left); q("#pg").textContent = run ? "pause" : "start"; q("#pn").textContent = done + " focus session" + (done === 1 ? "" : "s") + " finished"; root.querySelectorAll("[data-m]").forEach((b) => b.classList.toggle("on", b.dataset.m === mode)); document.title = run ? mm(left) + " – Nex.Velo" : document.title; };
+    const setMode = (m) => { mode = m; left = Math.max(1, +cfg[m] || 1) * 60; run = false; clearInterval(iv); paint(); };
+    const tick = () => { left = Math.max(0, Math.ceil((end - Date.now()) / 1000)); if (left <= 0) { beep(); if (mode === "f") { done++; cycle++; sv("pomoDone", done); setMode(cycle % 4 === 0 ? "l" : "s"); } else setMode("f"); NV.toast("time's up"); return; } paint(); };
+    const start = () => { run = true; end = Date.now() + left * 1000; clearInterval(iv); iv = setInterval(tick, 250); paint(); };
+    own.push(() => clearInterval(iv));
+    root.addEventListener("click", (e) => { const t = e.target; if (t.closest("#pg")) { run ? (run = false, clearInterval(iv), paint()) : start(); } else if (t.closest("#pr")) setMode(mode); else if (t.closest("#pk")) setMode(mode === "f" ? "s" : "f"); else if (t.dataset.m) setMode(t.dataset.m); });
+    root.addEventListener("change", (e) => { const k = e.target.dataset.c; if (k) { cfg[k] = Math.min(180, Math.max(1, +e.target.value || cfg[k])); e.target.value = cfg[k]; sv("pomo", cfg); if (!run && mode === k) setMode(k); } });
+    paint();
+  }
+
+  /* ---------- world clock ---------- */
+  function mountWorld(root, own) {
+    let zones = kv("world", ["America/New_York", "Europe/London", "Asia/Dubai", "Asia/Singapore", "Asia/Tokyo", "Australia/Sydney"]);
+    const all = (Intl.supportedValuesOf ? Intl.supportedValuesOf("timeZone") : ["UTC"]);
+    root.innerHTML = `<div class="tl-card"><div class="nt-bar"><input class="nt-in nt-grow" id="wz" list="wzl" placeholder="add a place, e.g. Asia/Kolkata" autocomplete="off"><datalist id="wzl">${all.map((z) => `<option value="${z}">`).join("")}</datalist><button class="btn primary" id="wa">add</button></div><div class="nt-list" id="wl"></div></div>`;
+    const name = (z) => z.split("/").pop().replace(/_/g, " ");
+    const paint = () => {
+      const now = new Date();
+      root.querySelector("#wl").innerHTML = zones.map((z, i) => { let t = "", d = "", off = ""; try { t = new Intl.DateTimeFormat(undefined, { timeZone: z, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: !NV.settings.h24 }).format(now); d = new Intl.DateTimeFormat(undefined, { timeZone: z, weekday: "short", day: "numeric", month: "short" }).format(now); off = new Intl.DateTimeFormat("en", { timeZone: z, timeZoneName: "shortOffset" }).formatToParts(now).find((p) => p.type === "timeZoneName")?.value || ""; } catch {} return `<div class="nt-item"><span><b>${esc(name(z))}</b><br><small style="color:var(--dim)">${esc(d)} · ${esc(off)}</small></span><span style="flex:none;font-size:1.375rem;font-variant-numeric:tabular-nums">${esc(t)}</span><button class="btn nt-x" data-r="${i}" aria-label="Remove">×</button></div>`; }).join("") || '<div class="msg">add a place above.</div>';
+    };
+    const iv = setInterval(paint, 1000); own.push(() => clearInterval(iv));
+    root.addEventListener("click", (e) => {
+      const r = e.target.closest("[data-r]");
+      if (r) { zones.splice(+r.dataset.r, 1); sv("world", zones); paint(); }
+      else if (e.target.closest("#wa")) { const v = root.querySelector("#wz").value.trim(), z = all.find((x) => x.toLowerCase() === v.toLowerCase()) || all.find((x) => x.toLowerCase().endsWith("/" + v.toLowerCase().replace(/ /g, "_"))); if (z && !zones.includes(z)) { zones.push(z); sv("world", zones); root.querySelector("#wz").value = ""; paint(); } else NV.toast(z ? "already in the list" : "couldn't find that place. pick one from the list"); }
+    });
+    paint();
+  }
+
+  /* ---------- hash generator ---------- */
+  function mountHash(root) {
+    root.innerHTML = `<div class="tl-card"><textarea class="tl-ta" id="ht" placeholder="type or paste text to hash"></textarea><div class="nt-list" id="hr"></div></div>`;
+    const ta = root.querySelector("#ht"), out = root.querySelector("#hr"); let seq = 0;
+    async function run() {
+      const my = ++seq, data = new TextEncoder().encode(ta.value), rows = [];
+      for (const a of ["SHA-1", "SHA-256", "SHA-384", "SHA-512"]) { const h = [...new Uint8Array(await crypto.subtle.digest(a, data))].map((b) => b.toString(16).padStart(2, "0")).join(""); rows.push([a, h]); }
+      if (my !== seq) return;
+      out.innerHTML = rows.map(([a, h]) => `<div class="nt-item"><span><small style="color:var(--dim)">${a}</small><br><code style="font-size:.75rem;word-break:break-all">${h}</code></span><button class="btn" data-h="${h}">copy</button></div>`).join("");
+    }
+    ta.addEventListener("input", run); out.addEventListener("click", (e) => { const b = e.target.closest("[data-h]"); if (b) copy(b.dataset.h, b); });
+    run();
+  }
+
+  /* ---------- picker and uuid ---------- */
+  function mountPicker(root) {
+    root.innerHTML = `<div class="tl-card"><textarea class="tl-ta" id="pl" placeholder="one option per line"></textarea><div class="nt-bar"><button class="btn primary" id="pp">pick one</button><button class="btn" id="ps">shuffle the list</button></div><div class="nt-out"><div><span class="nt-big" id="po" style="font-size:1.75rem">–</span></div></div>
+<h3 style="margin:.5rem 0 0;font-size:.8125rem;color:var(--dim);font-weight:500">uuid</h3><div class="nt-bar"><input class="nt-in nt-num" id="un" type="number" min="1" max="20" value="1"><button class="btn primary" id="ug">generate</button></div><div class="nt-list" id="ul"></div></div>`;
+    const q = (s) => root.querySelector(s), lines = () => q("#pl").value.split("\n").map((x) => x.trim()).filter(Boolean);
+    const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => { const r = randBelow(16); return (c === "x" ? r : (r & 3) | 8).toString(16); }));
+    root.addEventListener("click", (e) => {
+      const t = e.target;
+      if (t.closest("#pp")) { const l = lines(); q("#po").textContent = l.length ? l[randBelow(l.length)] : "add some options first"; }
+      else if (t.closest("#ps")) { const l = lines(); for (let i = l.length - 1; i > 0; i--) { const j = randBelow(i + 1); [l[i], l[j]] = [l[j], l[i]]; } q("#pl").value = l.join("\n"); }
+      else if (t.closest("#ug")) { const n = Math.min(20, Math.max(1, +q("#un").value || 1)); q("#ul").innerHTML = Array.from({ length: n }, uuid).map((u) => `<div class="nt-item"><span><code>${u}</code></span><button class="btn" data-u="${u}">copy</button></div>`).join(""); }
+      else if (t.dataset.u) copy(t.dataset.u, t);
+    });
+  }
+
+  /* ---------- QR code ---------- */
+  function mountQr(root) {
+    root.innerHTML = `<div class="tl-card"><textarea class="tl-ta" id="qt" style="min-height:5rem" placeholder="text or a link to turn into a QR code"></textarea>
+<div class="nt-bar"><select class="nt-in" id="ql"><option value="L">low error correction</option><option value="M" selected>medium</option><option value="Q">quartile</option><option value="H">high</option></select><input type="color" id="qf" value="#000000" style="width:3rem;height:2.5rem;border:0;border-radius:.625rem;background:var(--btn);padding:.25rem"><input type="color" id="qb" value="#ffffff" style="width:3rem;height:2.5rem;border:0;border-radius:.625rem;background:var(--btn);padding:.25rem"></div>
+<canvas id="qc" style="max-width:100%;align-self:center;border-radius:.5rem"></canvas><small id="qm" style="color:var(--dim)"></small><div class="row"><button class="btn primary" id="qd">download PNG</button></div></div>`;
+    const q = (s) => root.querySelector(s), cv = q("#qc");
+    function draw() {
+      const text = q("#qt").value;
+      if (!text) { cv.width = cv.height = 1; q("#qm").textContent = "type something above"; return; }
+      if (!window.NVQR) { q("#qm").textContent = "loading the QR encoder…"; return; }
+      let m; try { m = window.NVQR(text, q("#ql").value); } catch { q("#qm").textContent = "that is too long for a QR code. shorten it or lower the error correction."; return; }
+      const n = m.length, px = Math.max(4, Math.floor(320 / (n + 8))), pad = 4 * px, W = n * px + pad * 2, c = cv.getContext("2d");
+      cv.width = cv.height = W; c.fillStyle = q("#qb").value; c.fillRect(0, 0, W, W); c.fillStyle = q("#qf").value;
+      m.forEach((row, y) => row.forEach((on, x) => { if (on) c.fillRect(pad + x * px, pad + y * px, px, px); }));
+      q("#qm").textContent = n + " × " + n + " modules";
+    }
+    function ready() { if (window.NVQR) return draw(); const s = document.createElement("script"); s.src = "/qr.js"; s.onload = draw; s.onerror = () => { q("#qm").textContent = "couldn't load the QR encoder (qr.js). upload it to the public folder."; }; document.head.appendChild(s); }
+    root.addEventListener("input", draw); root.addEventListener("change", draw);
+    q("#qd").addEventListener("click", () => { cv.toBlob((b) => { if (!b) return; const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "qr-code.png"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1500); }); });
+    ready();
+  }
+
+  /* ---------- calendar and date math ---------- */
+  function mountCal(root) {
+    const now = new Date(); let y = now.getFullYear(), m = now.getMonth(), sel = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const iso = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    const draw = () => {
+      const first = new Date(y, m, 1), start = new Date(y, m, 1 - first.getDay()), cells = [];
+      for (let i = 0; i < 42; i++) cells.push(new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
+      const today = iso(now);
+      root.innerHTML = `<div class="tl-card"><div class="nt-bar"><button class="btn" id="cp">‹</button><b style="min-width:10rem">${new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(first)}</b><button class="btn" id="cn">›</button><button class="btn" id="ct">today</button></div>
+<div class="nt-cal">${["S", "M", "T", "W", "T", "F", "S"].map((d) => `<b>${d}</b>`).join("")}${cells.map((d) => `<button class="nt-day${d.getMonth() !== m ? " off" : ""}${iso(d) === today ? " today" : ""}${iso(d) === iso(sel) ? " sel" : ""}" data-d="${iso(d)}">${d.getDate()}</button>`).join("")}</div>
+<small style="color:var(--dim)">${new Intl.DateTimeFormat(undefined, { dateStyle: "full" }).format(sel)} · day ${Math.round((sel - new Date(sel.getFullYear(), 0, 0)) / 864e5)} of the year · week ${Math.ceil((((sel - new Date(sel.getFullYear(), 0, 1)) / 864e5) + new Date(sel.getFullYear(), 0, 1).getDay() + 1) / 7)}</small>
+<h3 style="margin:.5rem 0 0;font-size:.8125rem;color:var(--dim);font-weight:500">days between two dates</h3><div class="nt-bar"><input class="nt-in" type="date" id="da" value="${iso(sel)}"><input class="nt-in" type="date" id="db" value="${iso(sel)}"></div><div class="nt-out"><div id="dr">–</div></div>
+<h3 style="margin:.5rem 0 0;font-size:.8125rem;color:var(--dim);font-weight:500">add or subtract days</h3><div class="nt-bar"><input class="nt-in" type="date" id="dc" value="${iso(sel)}"><input class="nt-in nt-num" type="number" id="dn" value="30"></div><div class="nt-out"><div id="de">–</div></div></div>`;
+      calc();
+    };
+    const parse = (s) => { const p = String(s).split("-").map(Number); return p.length === 3 && !p.some(isNaN) ? new Date(p[0], p[1] - 1, p[2]) : null; };
+    function calc() {
+      const a = parse(root.querySelector("#da")?.value), b = parse(root.querySelector("#db")?.value), c = parse(root.querySelector("#dc")?.value), n = num(root.querySelector("#dn")?.value);
+      if (root.querySelector("#dr")) root.querySelector("#dr").textContent = a && b ? Math.round((b - a) / 864e5) + " days (" + (Math.round((b - a) / 864e5 / 7 * 10) / 10) + " weeks)" : "–";
+      if (root.querySelector("#de")) root.querySelector("#de").textContent = c && !isNaN(n) ? new Intl.DateTimeFormat(undefined, { dateStyle: "full" }).format(new Date(c.getFullYear(), c.getMonth(), c.getDate() + Math.trunc(n))) : "–";
+    }
+    root.addEventListener("input", calc);
+    root.addEventListener("click", (e) => {
+      const t = e.target;
+      if (t.closest("#cp")) { m--; if (m < 0) { m = 11; y--; } draw(); } else if (t.closest("#cn")) { m++; if (m > 11) { m = 0; y++; } draw(); }
+      else if (t.closest("#ct")) { y = now.getFullYear(); m = now.getMonth(); sel = new Date(y, m, now.getDate()); draw(); }
+      else if (t.closest("[data-d]")) { sel = parse(t.closest("[data-d]").dataset.d); y = sel.getFullYear(); m = sel.getMonth(); draw(); }
+    });
+    draw();
+  }
+
+  /* ---------- whiteboard ---------- */
+  function mountBoard(root, own) {
+    root.innerHTML = `<div class="tl-card"><div class="nt-bar"><input type="color" id="wc" value="#111111" style="width:3rem;height:2.5rem;border:0;border-radius:.625rem;background:var(--btn);padding:.25rem"><input type="range" id="ws" min="1" max="40" value="4" style="width:8rem"><button class="btn" id="we">eraser</button><button class="btn" id="wu">undo</button><button class="btn danger" id="wx">clear</button><button class="btn primary" id="wd">save PNG</button></div><canvas id="wb"></canvas></div>`;
+    const q = (s) => root.querySelector(s), cv = q("#wb"), c = cv.getContext("2d"); let erase = false, down = false, last = null, undo = [];
+    function size() { const keep = cv.width ? c.getImageData(0, 0, cv.width, cv.height) : null, w = Math.max(280, Math.floor(root.clientWidth || 600)), h = Math.round(Math.max(320, Math.min(560, innerHeight * 0.55))); cv.width = w; cv.height = h; c.fillStyle = "#fff"; c.fillRect(0, 0, w, h); if (keep) c.putImageData(keep, 0, 0); c.lineCap = c.lineJoin = "round"; }
+    size();
+    const pos = (e) => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height]; };
+    cv.addEventListener("pointerdown", (e) => { down = true; cv.setPointerCapture(e.pointerId); undo.push(c.getImageData(0, 0, cv.width, cv.height)); if (undo.length > 25) undo.shift(); last = pos(e); c.strokeStyle = erase ? "#fff" : q("#wc").value; c.lineWidth = +q("#ws").value; c.beginPath(); c.moveTo(last[0], last[1]); c.lineTo(last[0] + 0.01, last[1]); c.stroke(); });
+    cv.addEventListener("pointermove", (e) => { if (!down) return; const p = pos(e); c.beginPath(); c.moveTo(last[0], last[1]); c.lineTo(p[0], p[1]); c.stroke(); last = p; });
+    const up = () => { down = false; }; cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
+    root.addEventListener("click", (e) => {
+      const t = e.target;
+      if (t.closest("#we")) { erase = !erase; t.closest("#we").classList.toggle("primary", erase); }
+      else if (t.closest("#wu")) { const s = undo.pop(); if (s) c.putImageData(s, 0, 0); }
+      else if (t.closest("#wx")) { undo.push(c.getImageData(0, 0, cv.width, cv.height)); c.fillStyle = "#fff"; c.fillRect(0, 0, cv.width, cv.height); }
+      else if (t.closest("#wd")) cv.toBlob((b) => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "whiteboard.png"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1500); });
+    });
+    root.addEventListener("input", (e) => { if (e.target.id === "wc") { erase = false; q("#we").classList.remove("primary"); } });
+    const rs = () => size(); addEventListener("resize", rs); own.push(() => removeEventListener("resize", rs));
+  }
+
+  /* ---------- markdown with live preview ---------- */
+  function mdRender(src) {
+    const inline = (t) => esc(t).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<i>$2</i>").replace(/~~([^~]+)~~/g, "<s>$1</s>").replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    const lines = String(src).replace(/\r/g, "").split("\n"); let out = "", i = 0;
+    while (i < lines.length) {
+      const l = lines[i];
+      if (/^```/.test(l)) { const buf = []; i++; while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++]); i++; out += "<pre><code>" + esc(buf.join("\n")) + "</code></pre>"; continue; }
+      let m;
+      if ((m = /^(#{1,6})\s+(.*)$/.exec(l))) { out += `<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`; i++; }
+      else if (/^(-{3,}|\*{3,})\s*$/.test(l)) { out += "<hr>"; i++; }
+      else if (/^>\s?/.test(l)) { const buf = []; while (i < lines.length && /^>\s?/.test(lines[i])) buf.push(lines[i++].replace(/^>\s?/, "")); out += "<blockquote>" + inline(buf.join(" ")) + "</blockquote>"; }
+      else if (/^\s*[-*+]\s+/.test(l)) { out += "<ul>"; while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) out += "<li>" + inline(lines[i++].replace(/^\s*[-*+]\s+/, "")) + "</li>"; out += "</ul>"; }
+      else if (/^\s*\d+[.)]\s+/.test(l)) { out += "<ol>"; while (i < lines.length && /^\s*\d+[.)]\s+/.test(lines[i])) out += "<li>" + inline(lines[i++].replace(/^\s*\d+[.)]\s+/, "")) + "</li>"; out += "</ol>"; }
+      else if (!l.trim()) i++;
+      else { const buf = []; while (i < lines.length && lines[i].trim() && !/^(#{1,6}\s|```|>|\s*[-*+]\s|\s*\d+[.)]\s|-{3,}$)/.test(lines[i])) buf.push(lines[i++]); out += "<p>" + inline(buf.join(" ")) + "</p>"; if (!buf.length) i++; }
+    }
+    return out;
+  }
+  function mountMd(root) {
+    root.innerHTML = `<div class="tl-card"><div class="nt-two"><textarea class="tl-ta" id="mt" style="min-height:22rem;font-family:ui-monospace,monospace" spellcheck="false"></textarea><div class="nt-md" id="mp"></div></div><div class="nt-bar"><button class="btn" id="mc">copy markdown</button><button class="btn" id="mh">copy HTML</button></div></div>`;
+    const ta = root.querySelector("#mt"), pv = root.querySelector("#mp");
+    ta.value = kv("md", "# Hello\n\nWrite **markdown** on the left and see it on the right.\n\n- a list\n- with `code`\n\n> and a quote\n");
+    const upd = () => { pv.innerHTML = mdRender(ta.value); sv("md", ta.value); };
+    ta.addEventListener("input", upd);
+    root.querySelector("#mc").addEventListener("click", (e) => copy(ta.value, e.currentTarget)); root.querySelector("#mh").addEventListener("click", (e) => copy(pv.innerHTML, e.currentTarget));
+    upd();
+  }
+
+  /* ---------- regex tester ---------- */
+  function mountRegex(root) {
+    root.innerHTML = `<div class="tl-card"><div class="nt-bar"><span style="font-size:1.25rem">/</span><input class="nt-in nt-grow" id="rp" placeholder="pattern, e.g. (\\w+)@(\\w+)\\.com" autocomplete="off" spellcheck="false"><span style="font-size:1.25rem">/</span><input class="nt-in nt-num" id="rf" value="g" maxlength="6" aria-label="flags" spellcheck="false"></div><small id="re" class="tl-bad"></small>
+<textarea class="tl-ta" id="rt" placeholder="text to test against"></textarea><div class="nt-pre" id="rh"></div><div class="nt-list" id="rm"></div></div>`;
+    const q = (s) => root.querySelector(s); q("#rp").value = kv("rx", { p: "", t: "" }).p; q("#rt").value = kv("rx", { p: "", t: "" }).t;
+    function run() {
+      const p = q("#rp").value, t = q("#rt").value.slice(0, 20000); sv("rx", { p, t });
+      q("#re").textContent = ""; q("#rm").innerHTML = ""; if (!p) { q("#rh").innerHTML = esc(t); return; }
+      let re; try { re = new RegExp(p, [...new Set((q("#rf").value + "g").replace(/[^dgimsuvy]/g, ""))].join("")); } catch (e) { q("#re").textContent = String(e.message || e); q("#rh").innerHTML = esc(t); return; }
+      let html = "", last = 0, n = 0, rows = "";
+      for (const m of t.matchAll(re)) {
+        if (n++ >= 300) break;
+        html += esc(t.slice(last, m.index)) + '<span class="nt-mark">' + esc(m[0]) + "</span>"; last = m.index + m[0].length;
+        if (n <= 40) rows += `<div class="nt-item"><span><b>${esc(m[0]) || "(empty)"}</b> <small style="color:var(--dim)">at ${m.index}</small>${m.length > 1 ? "<br><small>" + [...m].slice(1).map((g, i) => `group ${i + 1}: ${esc(g ?? "undefined")}`).join(" · ") + "</small>" : ""}</span></div>`;
+      }
+      q("#rh").innerHTML = html + esc(t.slice(last)); q("#rm").innerHTML = (n ? `<small style="color:var(--dim)">${n >= 300 ? "300+" : n} match${n === 1 ? "" : "es"}</small>` : '<small style="color:var(--dim)">no matches</small>') + rows;
+    }
+    root.addEventListener("input", run); run();
+  }
+
+  /* ---------- terminal: a command line that runs in this page, with its own saved files (nothing runs on the server) ---------- */
+  function mountTerm(root, own) {
+    const D = (c) => ({ t: "d", c: c || {} }), F = (d) => ({ t: "f", d: d || "" });
+    let fs = kv("fs", null) || D({ home: D({ "readme.txt": F("welcome to the Nex.Velo terminal.\ntype help to see what it can do.\n") }) });
+    let cwd = ["home"], hist = kv("termhist", []), hi = 0, env = { USER: NV.settings.name || "guest", HOST: "nex-velo" };
+    const save = () => sv("fs", fs);
+    const norm = (p) => { const parts = (p.startsWith("/") ? [] : cwd.slice()); for (const s of p.split("/")) { if (!s || s === ".") continue; if (s === "..") parts.pop(); else if (s === "~") { parts.length = 0; parts.push("home"); } else parts.push(s); } return parts; };
+    const get = (parts) => { let n = fs; for (const s of parts) { if (!n || n.t !== "d" || !(s in n.c)) return null; n = n.c[s]; } return n; };
+    const parent = (parts) => get(parts.slice(0, -1));
+    const pstr = (parts) => "/" + parts.join("/");
+    root.innerHTML = `<div class="tl-card" style="text-align:left"><div id="to" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.8125rem;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;background:#0b0b0d;color:#e6e6e6;border-radius:.875rem;padding:.875rem;min-height:22rem;max-height:60vh;overflow:auto"></div></div>`;
+    const out = root.querySelector("#to");
+    const print = (t, cls) => { const d = document.createElement("div"); if (cls) d.style.color = cls; d.textContent = t; out.insertBefore(d, line); out.scrollTop = out.scrollHeight; };
+    const line = document.createElement("div"); line.style.display = "flex"; line.style.gap = ".5rem";
+    const pr = document.createElement("span"), inp = document.createElement("input");
+    inp.style.cssText = "flex:1;min-width:0;background:none;border:0;outline:none;color:inherit;font:inherit"; inp.spellcheck = false; inp.autocomplete = "off"; inp.setAttribute("autocapitalize", "off"); inp.setAttribute("aria-label", "terminal input");
+    const prompt = () => { pr.textContent = env.USER + "@" + env.HOST + ":" + (cwd.length === 1 && cwd[0] === "home" ? "~" : pstr(cwd)) + "$"; pr.style.color = "#7be0a0"; };
+    line.append(pr, inp); out.appendChild(line); prompt();
+    const tok = (s) => { const r = []; let cur = "", q = null, has = false; for (let i = 0; i < s.length; i++) { const c = s[i]; if (q) { if (c === q) q = null; else cur += c; } else if (c === '"' || c === "'") { q = c; has = true; } else if (/\s/.test(c)) { if (cur || has) r.push(cur); cur = ""; has = false; } else if (c === "|" || c === ">") { if (cur || has) r.push(cur); cur = ""; has = false; if (c === ">" && s[i + 1] === ">") { r.push(">>"); i++; } else r.push(c); } else cur += c; } if (cur || has) r.push(cur); return r; };
+    const lsLine = (n, name) => (n.t === "d" ? name + "/" : name);
+    const walk = (n, parts, f) => { f(parts, n); if (n.t === "d") for (const k of Object.keys(n.c)) walk(n.c[k], parts.concat(k), f); };
+    const C = {
+      help: () => "commands: help ls cd pwd cat echo mkdir touch rm cp mv clear history date whoami uname neofetch calc js open grep head tail wc sort uniq find tree env export alias\nredirect with > and >>, chain with |\nfiles live in this browser only. Ctrl+L clears, up/down shows history, tab completes.",
+      ls: (a) => { const t = norm(a.find((x) => !x.startsWith("-")) || "."), n = get(t); if (!n) return "ls: no such file or directory"; if (n.t === "f") return t[t.length - 1]; const all = a.includes("-a"); return Object.keys(n.c).sort().filter((k) => all || !k.startsWith(".")).map((k) => lsLine(n.c[k], k)).join(a.includes("-l") ? "\n" : "  "); },
+      cd: (a) => { const t = norm(a[0] || "~"), n = get(t); if (!n || n.t !== "d") return "cd: " + (a[0] || "") + ": not a directory"; cwd = t; prompt(); return ""; },
+      pwd: () => pstr(cwd),
+      cat: (a, si) => { if (!a.length) return si; return a.map((f) => { const n = get(norm(f)); return !n ? "cat: " + f + ": no such file" : n.t === "d" ? "cat: " + f + ": is a directory" : n.d; }).join(""); },
+      echo: (a) => a.join(" ") + "\n",
+      mkdir: (a) => { for (const f of a.filter((x) => x[0] !== "-")) { const t = norm(f), p = parent(t); if (!p || p.t !== "d") return "mkdir: can't create " + f; if (!(t[t.length - 1] in p.c)) p.c[t[t.length - 1]] = D(); } save(); return ""; },
+      touch: (a) => { for (const f of a) { const t = norm(f), p = parent(t); if (!p || p.t !== "d") return "touch: can't create " + f; if (!(t[t.length - 1] in p.c)) p.c[t[t.length - 1]] = F(); } save(); return ""; },
+      rm: (a) => { const rec = a.some((x) => /^-.*r/.test(x)); for (const f of a.filter((x) => x[0] !== "-")) { const t = norm(f), n = get(t), p = parent(t); if (!n) return "rm: " + f + ": no such file"; if (!t.length) return "rm: refusing to remove /"; if (n.t === "d" && !rec) return "rm: " + f + ": is a directory (use -r)"; delete p.c[t[t.length - 1]]; } save(); return ""; },
+      cp: (a) => { const [s, d] = a.filter((x) => x[0] !== "-"); const n = get(norm(s || "")), t = norm(d || ""); if (!n) return "cp: no such file"; let p = get(t), name = t[t.length - 1]; if (p && p.t === "d") { p = p; name = norm(s).slice(-1)[0]; } else { p = parent(t); } if (!p) return "cp: bad destination"; p.c[name] = JSON.parse(JSON.stringify(n)); save(); return ""; },
+      mv: (a) => { const r = C.cp(a); if (r) return r; C.rm(["-r", a.filter((x) => x[0] !== "-")[0]]); return ""; },
+      clear: () => { [...out.children].forEach((c) => c !== line && c.remove()); return ""; },
+      history: () => hist.map((h, i) => String(i + 1).padStart(4) + "  " + h).join("\n"),
+      date: () => new Date().toString(), whoami: () => env.USER, uname: () => "NexOS 1.0 (browser)",
+      neofetch: () => `${env.USER}@${env.HOST}\n------------------\nOS: Nex.Velo (in your browser)\nBrowser: ${navigator.userAgent.match(/(Chrome|Firefox|Safari|Edg)\/[\d.]+/)?.[0] || "unknown"}\nScreen: ${screen.width}x${screen.height}\nLanguage: ${navigator.language}\nTheme: ${NV.settings.theme}\nProxy: ${NV.settings.proxy || "scramjet"}`,
+      calc: (a) => { try { return fmtN(calcEval(a.join(" "), false, 0)) + "\n"; } catch (e) { return "calc: " + (e.message || e) + "\n"; } },
+      js: (a) => { try { const v = Function('"use strict";return (' + a.join(" ") + ")")(); return (typeof v === "object" ? JSON.stringify(v, null, 1) : String(v)) + "\n"; } catch (e) { return "js: " + e.message + "\n"; } },
+      open: (a) => { if (!a[0]) return "open: give a web address"; NV.openUrl(/^[a-z]+:\/\//i.test(a[0]) ? a[0] : "https://" + a[0]); return ""; },
+      grep: (a, si) => { const f = a.filter((x) => x[0] !== "-"), re = new RegExp(f[0] || "", a.includes("-i") ? "i" : ""); const src = f[1] ? (get(norm(f[1])) || { d: "" }).d : si; return src.split("\n").filter((l) => re.test(l)).join("\n"); },
+      head: (a, si) => { const n = +(a.find((x) => /^-\d+$/.test(x)) || "-10").slice(1), f = a.find((x) => x[0] !== "-"); return (f ? (get(norm(f)) || { d: "" }).d : si).split("\n").slice(0, n).join("\n"); },
+      tail: (a, si) => { const n = +(a.find((x) => /^-\d+$/.test(x)) || "-10").slice(1), f = a.find((x) => x[0] !== "-"); const l = (f ? (get(norm(f)) || { d: "" }).d : si).replace(/\n$/, "").split("\n"); return l.slice(-n).join("\n"); },
+      wc: (a, si) => { const f = a.find((x) => x[0] !== "-"), t = f ? (get(norm(f)) || { d: "" }).d : si; return `${t.split("\n").length - (t.endsWith("\n") ? 1 : 0)} ${t.trim() ? t.trim().split(/\s+/).length : 0} ${t.length}`; },
+      sort: (a, si) => { const f = a.find((x) => x[0] !== "-"), l = (f ? (get(norm(f)) || { d: "" }).d : si).replace(/\n$/, "").split("\n").sort(); return (a.includes("-r") ? l.reverse() : l).join("\n"); },
+      uniq: (a, si) => si.replace(/\n$/, "").split("\n").filter((l, i, arr) => l !== arr[i - 1]).join("\n"),
+      find: (a) => { const n = get(norm(a[0] && a[0][0] !== "-" ? a[0] : ".")), pat = a[a.indexOf("-name") + 1], re = pat ? new RegExp("^" + pat.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".") + "$") : null, base = norm(a[0] && a[0][0] !== "-" ? a[0] : "."), res = []; if (!n) return "find: no such directory"; walk(n, base, (p) => { if (!re || re.test(p[p.length - 1] || "")) res.push(pstr(p)); }); return res.join("\n"); },
+      tree: (a) => { const n = get(norm(a[0] || ".")); if (!n) return "tree: no such directory"; const lines = []; const rec = (nd, pre) => { const ks = Object.keys(nd.c).sort(); ks.forEach((k, i) => { lines.push(pre + (i === ks.length - 1 ? "└── " : "├── ") + k); if (nd.c[k].t === "d") rec(nd.c[k], pre + (i === ks.length - 1 ? "    " : "│   ")); }); }; lines.push("."); if (n.t === "d") rec(n, ""); return lines.join("\n"); },
+      env: () => Object.entries(env).map(([k, v]) => k + "=" + v).join("\n"),
+      export: (a) => { for (const x of a) { const i = x.indexOf("="); if (i > 0) env[x.slice(0, i)] = x.slice(i + 1); } prompt(); return ""; },
+      alias: () => "aliases aren't supported yet",
+    };
+    function run(text) {
+      const t = tok(text.replace(/\$([A-Za-z_]+)/g, (m, k) => env[k] ?? "")); if (!t.length) return;
+      const stages = [[]]; let redir = null;
+      for (let i = 0; i < t.length; i++) { if (t[i] === "|") stages.push([]); else if (t[i] === ">" || t[i] === ">>") { redir = [t[i], t[++i]]; } else stages[stages.length - 1].push(t[i]); }
+      let si = "";
+      for (const st of stages) {
+        const cmd = st[0]; if (!cmd) continue; const f = C[cmd];
+        if (!f) { print(cmd + ": command not found. type help", "#ff8a8a"); return; }
+        try { si = String(f(st.slice(1), si) ?? ""); } catch (e) { print(cmd + ": " + (e.message || e), "#ff8a8a"); return; }
+      }
+      if (redir) { const t2 = norm(redir[1] || ""), p = parent(t2); if (!redir[1] || !p || p.t !== "d") { print("can't write to " + redir[1], "#ff8a8a"); return; } const nm = t2[t2.length - 1]; p.c[nm] = F((redir[0] === ">>" && p.c[nm] && p.c[nm].t === "f" ? p.c[nm].d : "") + si); save(); }
+      else if (si) print(si.replace(/\n$/, ""));
+    }
+    inp.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { const v = inp.value; print(pr.textContent + " " + v, "#9aa0a6"); if (v.trim()) { hist.push(v); hist = hist.slice(-100); sv("termhist", hist); } hi = hist.length; inp.value = ""; run(v); prompt(); out.scrollTop = out.scrollHeight; }
+      else if (e.key === "ArrowUp") { e.preventDefault(); if (hi > 0) inp.value = hist[--hi]; }
+      else if (e.key === "ArrowDown") { e.preventDefault(); inp.value = hi < hist.length - 1 ? hist[++hi] : (hi = hist.length, ""); }
+      else if (e.key === "l" && e.ctrlKey) { e.preventDefault(); C.clear(); }
+      else if (e.key === "c" && e.ctrlKey) { print(pr.textContent + " " + inp.value + "^C", "#9aa0a6"); inp.value = ""; }
+      else if (e.key === "Tab") { e.preventDefault(); const parts = inp.value.split(/\s+/), last = parts.pop() || ""; let cands; if (!parts.length) cands = Object.keys(C); else { const i = last.lastIndexOf("/"), dir = get(norm(i >= 0 ? last.slice(0, i + 1) || "/" : ".")); cands = dir && dir.t === "d" ? Object.keys(dir.c).map((k) => (i >= 0 ? last.slice(0, i + 1) : "") + k + (dir.c[k].t === "d" ? "/" : "")) : []; } const m = cands.filter((c) => c.startsWith(last)); if (m.length === 1) inp.value = parts.concat(m[0]).join(" ") + (m[0].endsWith("/") ? "" : " "); else if (m.length > 1) print(m.join("  ")); }
+    });
+    out.addEventListener("click", () => { if (!getSelection().toString()) inp.focus(); });
+    print("Nex.Velo terminal. this is a safe command line that runs in your browser. type help.", "#7be0a0");
+    inp.focus();
+  }
+
+  /* ---------- virtual machine: v86, a free x86 emulator that runs in the browser (nothing runs on the server) ---------- */
+  function mountVm(root, own) {
+    const PRESETS = [
+      ["kolibri", "KolibriOS (a tiny desktop system)", "fda", "kolibri.img", 64],
+      ["linux4", "Linux (command line)", "cdrom", "linux4.iso", 128],
+      ["tinycore", "Tiny Core Linux (desktop)", "cdrom", "TinyCore-11.0.iso", 256],
+      ["freedos", "FreeDOS", "fda", "freedos722.img", 32],
+      ["kernel", "Linux kernel only (Buildroot)", "bzimage", "buildroot-bzimage68.bin", 128],
+    ];
+    root.innerHTML = `<div class="tl-card"><div class="nt-bar"><select class="nt-in" id="vp">${PRESETS.map((p) => `<option value="${p[0]}">${p[1]}</option>`).join("")}<option value="custom">my own image file…</option></select>
+<select class="nt-in" id="vmem">${[32, 64, 128, 256, 512].map((m) => `<option value="${m}">${m} MB memory</option>`).join("")}</select><button class="btn primary" id="vgo">start</button><button class="btn" id="vstop" disabled>stop</button></div>
+<div class="nt-bar" id="vc" hidden><select class="nt-in" id="vt"><option value="cdrom">CD-ROM (.iso)</option><option value="fda">floppy (.img)</option><option value="hda">hard disk (.img)</option><option value="bzimage">Linux kernel (bzImage)</option></select><input type="file" id="vf" class="nt-in nt-grow"></div>
+<div id="vs" tabindex="0" style="background:#000;color:#ddd;border-radius:.75rem;overflow:auto;min-height:18rem;text-align:left"><div style="white-space:pre;font:14px monospace;line-height:14px"></div><canvas style="display:none;max-width:100%"></canvas></div>
+<div class="nt-bar"><button class="btn" id="vcad" disabled>Ctrl+Alt+Del</button><button class="btn" id="vfs" disabled>full screen</button><button class="btn" id="vmouse" disabled>capture mouse</button><button class="btn" id="vpause" disabled>pause</button></div>
+<small id="vmsg" style="color:var(--dim)">pick a system and press start. click the screen to type into it. a free, safe computer inside this page. it has no internet and forgets its files when stopped.</small></div>`;
+    const q = (s) => root.querySelector(s), msg = (t) => { q("#vmsg").textContent = t; };
+    let emu = null, paused = false;
+    const sameOrigin = async (u) => { try { const r = await fetch(u, { method: "HEAD" }); return r.ok && !/html/i.test(r.headers.get("content-type") || ""); } catch { return false; } };
+    const firstOk = async (urls) => { for (const u of urls) if (await sameOrigin(u)) return u; return null; };
+    async function loadLib() {
+      if (window.V86) return;
+      const lib = await firstOk(["/v86/libv86.js", "https://cdn.jsdelivr.net/npm/v86@latest/build/libv86.js"]);
+      if (!lib) throw new Error("couldn't find the v86 emulator (libv86.js). add the v86 package so it is copied to public/v86, or check that cdn.jsdelivr.net is reachable");
+      await new Promise((ok, no) => { const s = document.createElement("script"); s.src = lib; s.onload = ok; s.onerror = () => no(new Error("couldn't load " + lib)); document.head.appendChild(s); });
+      if (!window.V86) throw new Error("the emulator loaded but didn't start");
+    }
+    const setBtns = (on) => ["#vstop", "#vcad", "#vfs", "#vmouse", "#vpause"].forEach((s) => { q(s).disabled = !on; });
+    function stop() { if (emu) { try { emu.destroy(); } catch {} emu = null; } paused = false; q("#vpause").textContent = "pause"; setBtns(false); q("#vgo").disabled = false; const sc = q("#vs"); sc.innerHTML = '<div style="white-space:pre;font:14px monospace;line-height:14px"></div><canvas style="display:none;max-width:100%"></canvas>'; }
+    own.push(stop);
+    q("#vp").addEventListener("change", () => { const c = q("#vp").value === "custom"; q("#vc").hidden = !c; const p = PRESETS.find((x) => x[0] === q("#vp").value); if (p) q("#vmem").value = String(p[4]); });
+    q("#vp").dispatchEvent(new Event("change"));
+    q("#vgo").addEventListener("click", async () => {
+      stop(); q("#vgo").disabled = true;
+      try {
+        msg("loading the emulator…"); await loadLib();
+        const wasm = await firstOk(["/v86/v86.wasm", "https://cdn.jsdelivr.net/npm/v86@latest/build/v86.wasm"]);
+        const bios = await firstOk(["/v86/seabios.bin", "https://cdn.jsdelivr.net/gh/copy/v86@master/bios/seabios.bin"]);
+        const vga = await firstOk(["/v86/vgabios.bin", "https://cdn.jsdelivr.net/gh/copy/v86@master/bios/vgabios.bin"]);
+        if (!wasm || !bios || !vga) throw new Error("couldn't find the emulator's " + (!wasm ? "v86.wasm" : !bios ? "seabios.bin" : "vgabios.bin") + " file");
+        const cfg = { wasm_path: wasm, memory_size: +q("#vmem").value * 1024 * 1024, vga_memory_size: 8 * 1024 * 1024, screen_container: q("#vs"), bios: { url: bios }, vga_bios: { url: vga }, autostart: true };
+        const id = q("#vp").value;
+        if (id === "custom") {
+          const f = q("#vf").files[0]; if (!f) throw new Error("choose an image file first");
+          msg("reading " + f.name + "…"); cfg[q("#vt").value] = { buffer: await f.arrayBuffer() };
+          if (q("#vt").value === "hda" || q("#vt").value === "cdrom") cfg.boot_order = q("#vt").value === "cdrom" ? 0x213 : 0x312;
+        } else {
+          const p = PRESETS.find((x) => x[0] === id), url = await firstOk(["/vm/" + p[3], "https://i.copy.sh/" + p[3]]);
+          if (!url) throw new Error("couldn't download " + p[3] + ". the host may block other sites. download it yourself and either upload it to public/vm/ or use \"my own image file\"");
+          cfg[p[2]] = { url };
+        }
+        msg("starting…"); emu = new window.V86(cfg);
+        emu.add_listener("emulator-ready", () => { msg("running. click the screen to type into it."); setBtns(true); });
+        q("#vs").focus();
+      } catch (e) { msg(String((e && e.message) || e)); q("#vgo").disabled = false; }
+    });
+    q("#vstop").addEventListener("click", () => { stop(); msg("stopped."); });
+    q("#vcad").addEventListener("click", () => { if (emu) emu.keyboard_send_scancodes([0x1d, 0x38, 0x53, 0xd3, 0xb8, 0x9d]); });
+    q("#vfs").addEventListener("click", () => { if (emu) emu.screen_go_fullscreen(); });
+    q("#vmouse").addEventListener("click", () => { if (emu) emu.lock_mouse(); });
+    q("#vpause").addEventListener("click", () => { if (!emu) return; paused = !paused; paused ? emu.stop() : emu.run(); q("#vpause").textContent = paused ? "resume" : "pause"; });
+    // the keyboard only goes to the machine while its screen is the thing you clicked
+    const kb = (e) => { if (emu && emu.keyboard_set_status) emu.keyboard_set_status(!!e.target.closest && !!e.target.closest("#vs")); };
+    document.addEventListener("pointerdown", kb, true); own.push(() => document.removeEventListener("pointerdown", kb, true));
+  }
+
   const TOOLS = [
     { id: "clock", name: "clock", desc: "your time, or any country's time", ic: "clock", mount: mountClock },
     { id: "password", name: "password generator", desc: "strong random passwords you can copy", ic: "password", mount: mountPassword },
     { id: "random-number", name: "random number", desc: "pick the range and how many", ic: "random", mount: mountRandom },
     { id: "word-counter", name: "word counter", desc: "words, characters, reading time", ic: "words", mount: mountWords },
     { id: "timestamp", name: "timestamp converter", desc: "unix time to dates and back", ic: "time", mount: mountTime },
-    { id: "colour", name: "colour converter", desc: "hex, rgb, hsl, cmyk and contrast", ic: "colour", mount: mountColour },
+    { id: "colour", name: "color tools", desc: "pick, convert, contrast", ic: "colour", mount: mountColour },
     { id: "website-iframe", name: "website to iframe", desc: "the HTML to embed any website", ic: "iframe", mount: mountIframe },
     { id: "case", name: "text case", desc: "upper, lower, title, camel, snake", ic: "case", mount: mountCase },
     { id: "encode", name: "base64 and url", desc: "encode and decode text", ic: "encode", mount: mountEncode },
     { id: "json", name: "json formatter", desc: "format, minify and check JSON", ic: "json", mount: mountJson },
     { id: "dice", name: "dice and coin", desc: "roll dice or flip a coin", ic: "dice", mount: mountDice },
     { id: "timer", name: "stopwatch and timer", desc: "keeps running when you leave", ic: "timer", mount: mountTimer },
+    { id: "pomodoro", name: "pomodoro", desc: "focus and break cycles", ic: "timer", mount: mountPomo },
+    { id: "world-clock", name: "world clock", desc: "times around the globe", ic: "world", mount: mountWorld },
+    { id: "flashcards", name: "flashcards", desc: "build decks and study with flip cards", ic: "flash", mount: mountFlash },
+    { id: "grades", name: "grade calculator", desc: "weighted grades, final score and GPA", ic: "grade", mount: mountGrades },
+    { id: "citations", name: "citations", desc: "MLA and APA citation generator", ic: "cite", mount: mountCite },
+    { id: "calculator", name: "calculator", desc: "scientific calculator", ic: "calc", mount: mountCalc },
+    { id: "notes", name: "notes", desc: "autosaved scratchpad", ic: "note", mount: mountNotes },
+    { id: "todo", name: "to-do", desc: "checklist and tasks", ic: "todo", mount: mountTodo },
+    { id: "converter", name: "converter", desc: "units and measures", ic: "convert", mount: mountConvert },
+    { id: "hash", name: "hash generator", desc: "SHA-1, SHA-256, SHA-512", ic: "hash", mount: mountHash },
+    { id: "picker", name: "random picker and uuid", desc: "pick from a list, make uuids", ic: "pick", mount: mountPicker },
+    { id: "qr-code", name: "QR code", desc: "make a QR from text", ic: "qr", mount: mountQr },
+    { id: "calendar", name: "calendar", desc: "month view and date math", ic: "cal", mount: mountCal },
+    { id: "whiteboard", name: "whiteboard", desc: "sketch and save a PNG", ic: "board", mount: mountBoard },
+    { id: "markdown", name: "markdown", desc: "write with live preview", ic: "md", mount: mountMd },
+    { id: "regex", name: "regex", desc: "test patterns live", ic: "regex", mount: mountRegex },
+    { id: "vm", name: "virtual machine", desc: "run Linux, KolibriOS or DOS in a window", ic: "vm", mount: mountVm },
+    { id: "terminal", name: "terminal", desc: "a command line with its own files", ic: "term", mount: mountTerm },
   ];
 
   page.innerHTML = `<div class="gpage">
