@@ -122,11 +122,11 @@
   const effFont = () => (NV.FONTS[settings.font] ? settings.font : settings.theme === "custom" && NV.FONTS[settings.custom.font] ? settings.custom.font : "jetbrains");
   function runSetup(first) {
     if ($("#su")) return;
-    const orig = { mode: settings.mode, theme: settings.theme, font: settings.font, wall: settings.wall, proxy: settings.proxy || "scramjet" };
+    const orig = { snow: !!settings.snow, mode: settings.mode, theme: settings.theme, font: settings.font, wall: settings.wall, proxy: settings.proxy || "scramjet" };
     let proxy = orig.proxy;
     const ENGINES = [["scramjet", "Scramjet", "the default engine. fast and well tested"], ["uv", "Ultraviolet", "an older, widely used engine. try it if a site won't load on Scramjet"], ["kaze", "Kaze", "a fast Scramjet fork. needs the Build Kaze action to have been run once"]];
     let step = 1, popped = false, remember = true;
-    let mode = settings.mode === "desktop" ? "desktop" : "normal", theme = settings.theme, font = effFont(), wall = settings.wall;
+    let mode = settings.mode === "desktop" ? "desktop" : "normal", theme = settings.theme, font = effFont(), wall = settings.wall, snow = !!settings.snow;
     let method = ["here", "blank", "blob", "window"].includes(settings.launch) ? settings.launch : "here", redirect = settings.launchRedirect !== false;
     const themes = (NV.THEMES || []).filter((t) => t[0] !== "custom"), fonts = Object.entries(NV.FONTS || {});
     if (!themes.some((t) => t[0] === "christmas")) themes.push(["christmas", "christmas", "linear-gradient(135deg,#d62839 50%,#1f7a46 50%)"]); // the theme file may not have registered it yet
@@ -150,6 +150,7 @@
  <button class="su-opt${mode === "desktop" ? " on" : ""}" data-mode="desktop" type="button"><div class="su-pv"><i class="mb"></i><i class="win"></i><i class="dock"></i></div><b>desktop</b><small>an Apple-style desktop. every app opens in its own window that you can drag, resize and minimise, with a dock along the bottom and a menu bar with the time, wifi and battery.</small></button>
  <button class="su-opt${mode === "normal" ? " on" : ""}" data-mode="normal" type="button"><div class="su-pv"><i class="tabs"></i><i class="bar"></i><i class="su-time">12:00</i></div><b>normal</b><small>the layout you know: tabs along the top, a search bar, and one page at a time.</small></button></div>`;
       if (step === 2) return `<h2>colour theme</h2><div class="su-themes">${themes.map(([id, label, c]) => `<button class="su-th${id === theme ? " on" : ""}" data-t="${id}" type="button"><i style="--c:${c}"></i>${esc(label)}</button>`).join("")}</div>
+${theme === "christmas" ? `<label class="switch"><div><b>falling snow</b><small>snow drifts down, lands on your windows and piles up</small></div><input type="checkbox" id="su-snow"${snow ? " checked" : ""}></label>` : ""}
 <h2>font</h2><div class="su-fonts">${fonts.map(([k, f]) => `<button class="su-fn${k === font ? " on" : ""}" data-f="${k}" type="button" style="font-family:${f[1].replace(/"/g, "&quot;")}"><b>Aa 123</b><small>${esc(f[0])}</small></button>`).join("")}</div>
 <h2>live wallpaper (it reacts to your mouse)</h2><div class="su-walls">${walls.map(([id, label, g]) => `<button class="su-wl${id === wall ? " on" : ""}" data-w="${id}" type="button"><i${g ? ` style="--c:${g}"` : ""}></i>${esc(label)}</button>`).join("")}</div>`;
       const showInstall = !(NV.install && NV.install.standalone());
@@ -167,9 +168,9 @@ ${preview()}<div class="su-body">${body()}</div>
     }
     draw();
 
-    const revert = () => { settings.theme = orig.theme; settings.font = orig.font; settings.wall = orig.wall; NV.applyTheme(true); NV.applyWall(); };
+    const revert = () => { settings.snow = orig.snow; settings.theme = orig.theme; settings.font = orig.font; settings.wall = orig.wall; NV.applyTheme(true); NV.applyWall(); };
     function finish() {
-      const data = { mode, theme, font, wall, launch: method, launchRedirect: redirect, proxy };
+      const data = { mode, theme, font, wall, launch: method, launchRedirect: redirect, proxy, snow };
       Object.assign(settings, data);
       if (remember) { NV.save(); LS.set("nexvelo.setup", "1"); } else NV.setSession(data); // not remembered: kept for this visit only
       const outside = window.top === window.self;
@@ -205,6 +206,7 @@ ${preview()}<div class="su-body">${body()}</div>
     box.addEventListener("change", (e) => {
       if (e.target.id === "su-rem") { remember = e.target.checked; const n = $("#su-remnote", box); if (n) n.textContent = remember ? REM_ON : REM_OFF; }
       else if (e.target.id === "su-redir") redirect = e.target.checked;
+      else if (e.target.id === "su-snow") snow = e.target.checked;
     });
   }
   NV.runSetup = () => runSetup(false);
