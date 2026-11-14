@@ -208,6 +208,7 @@ ${preview()}<div class="su-body">${body()}</div>
     });
   }
   NV.runSetup = () => runSetup(false);
+  if (!window.__nvAdKeys) { const k = document.createElement("script"); k.src = "/adkeys.js"; k.onerror = () => NV.showBanner && NV.showBanner("couldn't load adkeys.js. upload it to the public folder and refresh."); document.head.appendChild(k); } // ad-free keys and the admin panel
 
   /* ---------- later visits: open the chosen way, by itself ---------- */
   function autoLaunch() {
