@@ -13,6 +13,7 @@
 
   const svg = (d, extra = "") => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ${extra} aria-hidden="true">${d}</svg>`;
   const IC = {
+    vm: svg('<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>'),
     web: svg('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18"/>'),
     ai: svg('<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z"/>'),
     games: svg('<path d="M6 9h12a3 3 0 0 1 3 3.2l-.6 4A2.4 2.4 0 0 1 16 17.3L15 15H9l-1 2.3a2.4 2.4 0 0 1-4.4-1.1l-.6-4A3 3 0 0 1 6 9z"/><path d="M8 11v3M6.5 12.5h3M16 12h.01M18 13.5h.01"/>'),
@@ -35,6 +36,7 @@
     { id: "music", name: "Music", kind: "music", hue: 24, on: () => settings.music },
     { id: "tools", name: "Tools", kind: "tools", hue: 205, on: () => settings.tools !== false },
     { id: "chat", name: "Chat", kind: "chat", hue: 330, on: () => settings.chat !== false },
+    { id: "vm", name: "Virtual machine", kind: "tools", hue: 265, on: () => settings.tools !== false },
     { id: "settings", name: "Settings", kind: "settings", hue: 220, on: () => true },
   ];
   const enabled = () => APPS.filter((a) => a.on());
@@ -61,6 +63,7 @@ body.desktop #toast,body.desktop #banner,body.desktop #update,body.desktop #tour
 .dk-batt i b{display:block;height:100%;width:0;background:currentColor;border-radius:1.5px}
 .dk-batt.chg i b{background:#2fa862}
 #dk-icons{position:absolute;inset:0;z-index:0}
+#dk-snow{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none}
 #dk-icons.snapping{background-image:radial-gradient(circle,color-mix(in srgb,var(--fg) 34%,transparent) 1.5px,transparent 2.5px);background-size:104px 96px;background-position:8px 36px}
 .dk-icon.snap{transition:left .14s cubic-bezier(.3,.9,.3,1),top .14s cubic-bezier(.3,.9,.3,1)}.dk-icon.lift{z-index:3;filter:drop-shadow(0 8px 14px rgba(0,0,0,.35))}
 #desktop .clock{display:none!important} /* the menu bar already shows the time */
@@ -346,6 +349,9 @@ body.desktop #tabbar,body.desktop #toolbar,body.desktop #views{display:none!impo
   }
   function launch(id, forceNew) {
     const app = APPS.find((a) => a.id === id); if (!app) return;
+    if (id === "vm") { // the virtual machine lives in the Tools window, on its own page
+      NV.openPage("tools"); let n = 0; const t = setInterval(() => { if ((NV.toolsShow && (NV.toolsShow("vm"), true)) || ++n > 20) clearInterval(t); }, 150); return;
+    }
     const open = wins.filter((w) => w.app.id === id);
     if (open.length && !forceNew) { focusWin(topWin(open)); return; }
     if (app.kind === "web") NV.newTab({ kind: "web", newWindow: !!forceNew }); else NV.openPage(app.kind);
@@ -522,8 +528,99 @@ body.desktop #tabbar,body.desktop #toolbar,body.desktop #views{display:none!impo
     NV.onSettingsApps = () => { paintDock(); buildIcons(); };
   }
 
+  /* ---------- snow that lands on windows, piles up, travels with a dragged window and sweeps away with the cursor ----------
+     On when the Christmas theme is chosen and "falling snowflakes" is switched on (Settings > Appearance, or the first-visit setup). */
+  function startSnow() {
+    const cv = document.createElement("canvas"); cv.id = "dk-snow"; cv.hidden = true; cv.setAttribute("aria-hidden", "true");
+    root.insertBefore(cv, layer.nextSibling);
+    const ctx = cv.getContext("2d"), BIN = 4, MAXH = 18;
+    let flakes = [], parts = [], raf = 0, last = 0, piles = new WeakMap(), dock = null, mouse = null;
+    const calm = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const want = () => !!(NV.settings.snow && NV.settings.theme === "christmas") && !calm() && !document.hidden;
+    const fit = () => { const d = devicePixelRatio || 1; cv.width = innerWidth * d; cv.height = innerHeight * d; ctx.setTransform(d, 0, 0, d, 0, 0); };
+    const spawn = (f, top) => { f.x = Math.random() * innerWidth; f.y = top ? -Math.random() * innerHeight : -8; return f; };
+    const seed = () => { flakes = Array.from({ length: Math.round(Math.min(240, innerWidth / 5.5)) }, () => spawn({ r: 1 + Math.random() * 2.4, v: 28 + Math.random() * 40, p: Math.random() * 6.28, s: 0.4 + Math.random() * 0.9 }, true)); };
+    function surfaces() {
+      const ws = wins.filter((w) => !w.min && w.el.style.display !== "none").map((w) => ({ key: w, r: w.el.getBoundingClientRect(), z: +w.el.style.zIndex || 0 }));
+      const out = ws.map((s) => ({ key: s.key, x0: s.r.left, x1: s.r.right, y: s.r.top, z: s.z }));
+      out.push({ key: "dock", x0: 0, x1: innerWidth, y: innerHeight - DOCK_H, z: -1 });
+      return { out, ws };
+    }
+    const pileOf = (s) => {
+      const n = Math.ceil((s.x1 - s.x0) / BIN) + 1; let p = s.key === "dock" ? dock : piles.get(s.key);
+      if (!p || p.h.length !== n) { const np = { h: new Float32Array(n) }; if (p) np.h.set(p.h.subarray(0, Math.min(n, p.h.length))); p = np; if (s.key === "dock") dock = p; else piles.set(s.key, p); }
+      return p;
+    };
+    const covered = (ws, s, x, y) => ws.some((o) => o.key !== s.key && o.z > s.z && x >= o.r.left && x <= o.r.right && y >= o.r.top && y <= o.r.bottom);
+    function add(s, x, r) {
+      const p = pileOf(s), n = p.h.length, i = Math.max(0, Math.min(n - 1, Math.round((x - s.x0) / BIN)));
+      const cap = (j) => 6 + 8 * (0.5 + 0.5 * Math.sin(j * 0.11 + 1)) + 4 * (0.5 + 0.5 * Math.sin(j * 0.37)); // the height limit varies, so piles look like soft heaps and not a flat band
+      for (const [d, k] of [[0, 2.4], [-1, 1.2], [1, 1.2], [-2, 0.6], [2, 0.6]]) { const j = i + d; if (j >= 0 && j < n) p.h[j] = Math.min(cap(j), p.h[j] + k * r * 0.45); }
+      for (let pass = 0; pass < 2; pass++) for (let j = Math.max(1, i - 6); j < Math.min(n - 1, i + 7); j++) { // snow slumps into a soft heap instead of a spike
+        const b = p.h[j];
+        if (b - p.h[j - 1] > 2.5) { const d = (b - p.h[j - 1] - 2.5) / 2; p.h[j] -= d; p.h[j - 1] += d; }
+        if (b - p.h[j + 1] > 2.5) { const d = (b - p.h[j + 1] - 2.5) / 2; p.h[j] -= d; p.h[j + 1] += d; }
+      }
+    }
+    function sweep(sf) {
+      if (!mouse || mouse.down || root.classList.contains("dk-dragging") || performance.now() - mouse.t > 120) return;
+      const speed = Math.hypot(mouse.vx, mouse.vy);
+      for (const s of sf) {
+        if (Math.abs(mouse.y - s.y) > 46 || mouse.x < s.x0 - 40 || mouse.x > s.x1 + 40) continue;
+        const p = pileOf(s);
+        for (let j = 0; j < p.h.length; j++) {
+          const bx = s.x0 + j * BIN;
+          if (p.h[j] > 0.1 && Math.abs(bx - mouse.x) < 44) {
+            const take = Math.min(p.h[j], 1.2 + speed * 0.004); p.h[j] -= take;
+            if (parts.length < 260 && Math.random() < 0.6) parts.push({ x: bx, y: s.y - p.h[j], vx: mouse.vx * 0.35 + (Math.random() - 0.5) * 90, vy: -30 - Math.random() * 110, life: 0.6 + Math.random() * 0.6 });
+          }
+        }
+      }
+    }
+    function frame(now) {
+      if (!want()) return stop();
+      const dt = Math.min(0.05, (now - last) / 1000 || 0); last = now;
+      const { out: sf, ws } = surfaces(), W = innerWidth, H = innerHeight;
+      ctx.clearRect(0, 0, W, H);
+      for (const f of flakes) {
+        const oy = f.y; f.p += dt * f.s; f.x += Math.sin(f.p) * 14 * dt; f.y += f.v * dt;
+        let land = null;
+        for (const s of sf) if (oy <= s.y && f.y >= s.y && f.x >= s.x0 && f.x <= s.x1 && !covered(ws, s, f.x, s.y - 1)) { land = s; break; }
+        if (land) { add(land, f.x, f.r); spawn(f); continue; }
+        if (f.y > H + 8 || ws.some((o) => f.x >= o.r.left && f.x <= o.r.right && f.y >= o.r.top && f.y <= o.r.bottom)) { spawn(f); continue; } // fell off, or a window slid over it
+        ctx.globalAlpha = 0.5 + f.r / 5; ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, 6.2832); ctx.fill();
+      }
+      sweep(sf);
+      ctx.globalAlpha = 1; ctx.fillStyle = "rgba(255,255,255,.97)";
+      for (const s of sf) { // the piles. each is drawn along its surface's top edge, so it moves with the window
+        const p = pileOf(s); let any = false; for (let j = 0; j < p.h.length; j++) if (p.h[j] > 0.2) { any = true; break; } if (!any) continue;
+        ctx.save();
+        const higher = ws.filter((o) => o.key !== s.key && o.z > s.z);
+        if (higher.length) { ctx.beginPath(); ctx.rect(0, 0, W, H); for (const o of higher) ctx.rect(o.r.left, o.r.top, o.r.width, o.r.height); ctx.clip("evenodd"); }
+        ctx.beginPath(); ctx.moveTo(s.x0, s.y + 1);
+        for (let j = 0; j < p.h.length; j++) ctx.lineTo(Math.min(s.x1, s.x0 + j * BIN), s.y - Math.max(0, p.h[j] - 0.4));
+        ctx.lineTo(s.x1, s.y + 1); ctx.closePath(); ctx.fill(); ctx.restore();
+      }
+      for (let i = parts.length - 1; i >= 0; i--) { // snow thrown up by the cursor
+        const q = parts[i]; q.life -= dt; q.vy += 320 * dt; q.x += q.vx * dt; q.y += q.vy * dt;
+        if (q.life <= 0 || q.y > H) { parts.splice(i, 1); continue; }
+        ctx.globalAlpha = Math.min(1, q.life * 2); ctx.beginPath(); ctx.arc(q.x, q.y, 1.6, 0, 6.2832); ctx.fill();
+      }
+      ctx.globalAlpha = 1; raf = requestAnimationFrame(frame);
+    }
+    function run() { cv.hidden = false; fit(); seed(); last = performance.now(); raf = requestAnimationFrame(frame); }
+    function stop() { cancelAnimationFrame(raf); raf = 0; cv.hidden = true; parts = []; piles = new WeakMap(); dock = null; }
+    root.addEventListener("pointermove", (e) => {
+      const now = performance.now(), dt = mouse ? Math.max(8, now - mouse.t) / 1000 : 0.016;
+      mouse = { x: e.clientX, y: e.clientY, vx: mouse ? (e.clientX - mouse.x) / dt * 0.5 + mouse.vx * 0.5 : 0, vy: mouse ? (e.clientY - mouse.y) / dt * 0.5 + mouse.vy * 0.5 : 0, t: now, down: e.buttons !== 0 };
+    });
+    addEventListener("resize", () => { if (raf) { fit(); seed(); } });
+    setInterval(() => { const w = want(); if (w && !raf) run(); else if (!w && raf) stop(); }, 500);
+    NV.desktopSnow = () => ({ running: !!raf, flakes: flakes.length, piled: Math.round(Math.max(0, ...(wins.map((w) => { const p = piles.get(w); return p ? Math.max(...p.h) : 0; })))) });
+  }
+
   NV.desktopStart = () => {
-    NV.desktopMode = true; document.body.classList.add("desktop"); build();
+    NV.desktopMode = true; document.body.classList.add("desktop"); build(); startSnow();
     for (const id of ["tabbar", "toolbar", "views"]) { const el = document.getElementById(id); if (el) { el.hidden = true; el.style.setProperty("display", "none", "important"); } } // the normal browser bars are not used here
   };
   NV.desktopWindows = () => wins.map((w) => ({ kind: w.kind, min: w.min, max: w.max, focus: w === focused }));
