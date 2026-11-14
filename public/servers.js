@@ -88,6 +88,23 @@
   setTimeout(watch, 15000);
   setInterval(watch, 45000);
 
+  /* ----- music recommendations that change: a different handful from a big list, renewed every 15 minutes ----- */
+  const REC_POOL = ["Blinding Lights The Weeknd", "Levitating Dua Lipa", "As It Was Harry Styles", "Flowers Miley Cyrus", "Anti-Hero Taylor Swift", "Espresso Sabrina Carpenter", "Starboy The Weeknd", "Heat Waves Glass Animals", "Sunflower Post Malone", "good 4 u Olivia Rodrigo", "Stay The Kid LAROI Justin Bieber", "Shape of You Ed Sheeran", "Bad Guy Billie Eilish", "Watermelon Sugar Harry Styles", "Dance Monkey Tones and I", "Someone You Loved Lewis Capaldi", "Believer Imagine Dragons", "Thunder Imagine Dragons", "Counting Stars OneRepublic", "Shake It Off Taylor Swift", "Uptown Funk Bruno Mars", "Cheap Thrills Sia", "Havana Camila Cabello", "Senorita Shawn Mendes Camila Cabello", "Peaches Justin Bieber", "Montero Lil Nas X", "Industry Baby Lil Nas X", "Kiss Me More Doja Cat", "Say So Doja Cat", "Don't Start Now Dua Lipa", "New Rules Dua Lipa", "Physical Dua Lipa", "Cruel Summer Taylor Swift", "Lavender Haze Taylor Swift", "Vampire Olivia Rodrigo", "drivers license Olivia Rodrigo", "Happier Than Ever Billie Eilish", "Ocean Eyes Billie Eilish", "lovely Billie Eilish Khalid", "Circles Post Malone", "Rockstar Post Malone", "Congratulations Post Malone", "Save Your Tears The Weeknd", "Die For You The Weeknd", "Can't Feel My Face The Weeknd", "Photograph Ed Sheeran", "Perfect Ed Sheeran", "Thinking Out Loud Ed Sheeran", "Closer The Chainsmokers", "Something Just Like This Coldplay", "Viva La Vida Coldplay", "Yellow Coldplay", "Mr. Brightside The Killers", "Somebody Told Me The Killers", "Sweater Weather The Neighbourhood", "Riptide Vance Joy", "Take Me To Church Hozier", "Africa Toto", "Dreams Fleetwood Mac", "Don't Stop Believin Journey", "Bohemian Rhapsody Queen", "Smells Like Teen Spirit Nirvana", "Lose Yourself Eminem", "Without Me Eminem", "HUMBLE Kendrick Lamar", "Sicko Mode Travis Scott", "Goosebumps Travis Scott", "Lucid Dreams Juice WRLD", "All of Me John Legend", "Stay With Me Sam Smith", "Hotline Bling Drake", "God's Plan Drake", "One Dance Drake", "Rolling in the Deep Adele", "Easy On Me Adele", "Bad Habits Ed Sheeran", "Unholy Sam Smith Kim Petras", "Calm Down Rema Selena Gomez", "Boy's a Liar Pt 2 PinkPantheress", "Tití Me Preguntó Bad Bunny", "Dákiti Bad Bunny Jhay Cortez", "Despacito Luis Fonsi", "Gangnam Style PSY", "Dynamite BTS", "Butter BTS", "Pink Venom BLACKPINK", "How You Like That BLACKPINK"];
+  const REC_KEY = "nexvelo.rec", REC_TTL = 15 * 60 * 1000;
+  async function rotatingRecommended() {
+    let saved = null; try { saved = JSON.parse(LS.get(REC_KEY, "null")); } catch {}
+    if (saved && saved.tracks && saved.tracks.length && Date.now() - saved.t < REC_TTL) return saved.tracks;
+    const skip = new Set((saved && saved.q) || []), fresh = REC_POOL.filter((x) => !skip.has(x));
+    const picks = (fresh.length >= 12 ? fresh : REC_POOL).slice().sort(() => Math.random() - 0.5).slice(0, 12), tracks = [];
+    for (let i = 0; i < picks.length; i += 4) {
+      const got = await Promise.allSettled(picks.slice(i, i + 4).map((q) => fetch("/api/music/search?q=" + encodeURIComponent(q)).then((r) => r.json())));
+      for (const g of got) { const t = g.status === "fulfilled" && g.value && g.value.results && g.value.results[0]; if (t) tracks.push(t); }
+    }
+    if (tracks.length < 4) return saved && saved.tracks ? saved.tracks : null; // not enough came back: keep the old list, or let the server's own list answer
+    LS.set(REC_KEY, JSON.stringify({ t: Date.now(), q: picks, tracks }));
+    return tracks;
+  }
+
   /* ----- backup API server: if nex-velo.up.railway.app can't be reached, the same request goes to railway2 ----- */
   const prevFetch = window.fetch.bind(window);
   let mainDownUntil = 0;
@@ -95,6 +112,9 @@
     const url = typeof input === "string" ? input : input && input.url;
     const m = typeof url === "string" && url.match(/^(?:https:\/\/nex-velo\.up\.railway\.app)?(\/api\/[^#]*)$/);
     const method = String((init && init.method) || (input && input.method) || "GET").toUpperCase();
+    if (m && method === "GET" && /^\/api\/music\/recommended(\?|$)/.test(m[1])) {
+      try { const tracks = await rotatingRecommended(); if (tracks) return new Response(JSON.stringify({ tracks }), { headers: { "content-type": "application/json" } }); } catch {}
+    }
     if (!m || method !== "GET") return prevFetch(input, init);
     const path = m[1], bad = (r) => r.status >= 502 && r.status <= 504;
     const viaMain = () => prevFetch(input, init), viaBackup = () => prevFetch(API_BACKUP + path, init);
