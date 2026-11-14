@@ -23,6 +23,55 @@
   });
 })();
 
+/* Front disguise. The first time a tab opens, a harmless (made-up) school website covers the page, its words scrambled until Nex.Velo has loaded.
+   Reload the tab to get the real Nex.Velo. It can be switched off in Settings > General. Reloads after updates or repairs skip it. */
+(() => {
+  try {
+    if (window.top !== window) return;
+    if ((JSON.parse(localStorage.getItem("nexvelo.settings") || "{}") || {}).decoy === false) return;
+    if (sessionStorage.getItem("nexvelo.decoy") === "1" || /[?&](nv|repair)=/.test(location.search)) return;
+    sessionStorage.setItem("nexvelo.decoy", "1");
+  } catch { return; }
+  const css = "#nv-decoy{position:fixed;inset:0;z-index:2147483647;background:#f4f6fa;color:#1b2a41;overflow:auto;font:16px/1.55 Georgia,'Times New Roman',serif}#nv-decoy *{box-sizing:border-box}#nv-decoy a{color:inherit;text-decoration:none;cursor:default}" +
+    "#nv-decoy header{background:#12305a;color:#fff;padding:14px 5vw;display:flex;flex-wrap:wrap;gap:12px 28px;align-items:center}#nv-decoy header b{font-size:22px;letter-spacing:.02em}#nv-decoy nav{display:flex;flex-wrap:wrap;gap:6px 22px;font:14px system-ui,sans-serif}" +
+    "#nv-decoy .hero{background:linear-gradient(135deg,#2a5d9f,#12305a);color:#fff;padding:56px 5vw}#nv-decoy .hero h1{margin:0 0 10px;font-size:clamp(26px,5vw,44px)}#nv-decoy .hero p{margin:0;max-width:42rem;font:17px/1.5 system-ui,sans-serif;opacity:.92}" +
+    "#nv-decoy .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;padding:28px 5vw}#nv-decoy .card{background:#fff;border-radius:10px;padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,.12)}#nv-decoy .card h2{margin:0 0 8px;font-size:19px;color:#12305a}#nv-decoy .card p,#nv-decoy .card li{font:14.5px/1.5 system-ui,sans-serif;margin:.3em 0}#nv-decoy ul{padding-left:18px;margin:0}" +
+    "#nv-decoy footer{padding:22px 5vw 40px;font:13px system-ui,sans-serif;color:#556}";
+  const html = '<header><b>Maplewood Academy</b><nav><a>Home</a><a>About</a><a>Academics</a><a>Athletics</a><a>Calendar</a><a>Parents</a><a>Contact</a></nav></header>' +
+    '<section class="hero"><h1>Welcome back, Falcons</h1><p>Classes continue as scheduled this week. Please check the announcements below for schedule changes, and remember to return library books before winter break.</p></section>' +
+    '<section class="grid"><div class="card"><h2>Announcements</h2><ul><li>Fall semester exams begin December 14.</li><li>Yearbook photo retakes are on Thursday in the gym.</li><li>The robotics club meets every Tuesday after school.</li></ul></div>' +
+    '<div class="card"><h2>Lunch menu</h2><p>Monday: baked pasta, garden salad, fruit cup.</p><p>Tuesday: chicken wrap, carrot sticks, yogurt.</p><p>Wednesday: vegetable soup, bread roll, apple slices.</p></div>' +
+    '<div class="card"><h2>Upcoming events</h2><ul><li>Dec 5: Winter concert, 7:00 PM</li><li>Dec 12: Parent and teacher conferences</li><li>Dec 18: Last day before winter break</li></ul></div>' +
+    '<div class="card"><h2>Student resources</h2><p>Library hours, tutoring schedule, counseling office and the student handbook can be found under the Academics menu.</p></div></section>' +
+    '<footer>Maplewood Academy · 410 Elm Street · Office hours 8:00 AM to 4:00 PM · All rights reserved.</footer>';
+  const st = document.createElement("style"); st.textContent = css; document.head.appendChild(st);
+  const box = document.createElement("div"); box.id = "nv-decoy"; box.innerHTML = html;
+  document.body.appendChild(box);
+  box.addEventListener("click", (e) => { if (e.target.closest("a")) e.preventDefault(); });
+  // look like the school site in the tab strip too
+  const title = "Maplewood Academy – Home", icon = document.querySelector('link[rel="icon"]'), oldIcon = icon && icon.href;
+  if (icon) icon.href = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#12305a"/><text x="16" y="23" font-size="20" text-anchor="middle" fill="#fff" font-family="Georgia">M</text></svg>');
+  const keepTitle = setInterval(() => { if (document.title !== title) document.title = title; }, 300);
+  // scramble: every letter shows a random letter until the page has loaded, then the words settle from left to right
+  const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT), nodes = [];
+  for (let n; (n = walker.nextNode());) if (n.nodeValue.trim()) nodes.push({ n, t: n.nodeValue });
+  const ABC = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", total = nodes.reduce((a, x) => a + x.t.length, 0);
+  let settleAt = 0, started = performance.now(), done = false;
+  const ready = () => { if (!settleAt) settleAt = Math.max(performance.now(), started + 1400); };
+  if (window.__nvScriptsDone) ready(); else addEventListener("nv-scripts", ready, { once: true });
+  setTimeout(ready, 8000);
+  (function frame(now) {
+    const k = settleAt ? Math.min(1, (now - settleAt) / 1100) : 0, upTo = k * total; let at = 0;
+    for (const x of nodes) {
+      let out = "";
+      for (let i = 0; i < x.t.length; i++) { const c = x.t[i]; out += /\s|[.,:;'"·–\-0-9]/.test(c) || at + i < upTo ? c : ABC[(Math.random() * ABC.length) | 0]; }
+      at += x.t.length; if (x.n.nodeValue !== out) x.n.nodeValue = out;
+    }
+    if (k < 1) requestAnimationFrame(frame); else done = true;
+  })(performance.now());
+  void done; void keepTitle; void oldIcon;
+})();
+
 /* Proxy engines. This runs before app.js, so it can hand app.js a controller that builds Ultraviolet frames when Ultraviolet is chosen
    (Settings > General > proxy engine, or the first-visit setup). Scramjet stays the default and the fallback. */
 (() => {
@@ -226,6 +275,32 @@
       engineBox.closest("label").after(fld);
       const pe = fld.querySelector("select"); pe.value = NV.settings.proxy || "scramjet";
       pe.addEventListener("change", () => { NV.settings.proxy = pe.value; NV.save(); NV.toast("switching proxy engine…"); setTimeout(() => location.reload(), 400); });
+    }
+
+    /* ----- "Virtual machine" in the nine-dot Apps menu (it opens the Tools page on the virtual machine) ----- */
+    const appsMenu = $("#apps-menu");
+    if (appsMenu) {
+      const addVm = () => {
+        if (!appsMenu.querySelector("[data-app]") || appsMenu.querySelector('[data-app="vm"]')) return;
+        const b = document.createElement("button"); b.className = "app-tile"; b.setAttribute("role", "menuitem"); b.dataset.app = "vm";
+        b.innerHTML = '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg><span>Virtual machine</span>';
+        appsMenu.appendChild(b);
+      };
+      new MutationObserver(addVm).observe(appsMenu, { childList: true });
+      appsMenu.addEventListener("click", (e) => {
+        if (!e.target.closest('[data-app="vm"]')) return;
+        NV.openPage("tools"); const go = () => NV.toolsShow ? (NV.toolsShow("vm"), true) : false; if (!go()) { let n = 0; const t = setInterval(() => { if (go() || ++n > 20) clearInterval(t); }, 150); }
+      });
+    }
+
+    /* ----- front disguise switch (Settings > General) ----- */
+    const redo = $("#launch-redirect");
+    if (redo && !$("#decoy-on")) {
+      const row = document.createElement("label"); row.className = "switch";
+      row.innerHTML = '<div><b>fake school page on first load</b><small>a new tab first shows a harmless school website. reload it to get Nex.Velo</small></div><input type="checkbox" id="decoy-on">';
+      redo.closest("label").after(row);
+      const cb = row.querySelector("input"); cb.checked = NV.settings.decoy !== false;
+      cb.addEventListener("change", () => { NV.settings.decoy = cb.checked; NV.save(); });
     }
 
     /* ----- layout: original or windows (the desktop layout) ----- */
