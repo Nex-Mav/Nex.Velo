@@ -1,0 +1,11 @@
+# Cloudflare Worker for the ad-free key system. Deployed from GitHub by .github/workflows/deploy-keys-worker.yml
+name = "nex-velo-keys"
+main = "keys-worker.js"
+compatibility_date = "2025-01-01"
+
+# Create a KV namespace in the Cloudflare dashboard (Storage & Databases > KV > Create), then paste its id here.
+[[kv_namespaces]]
+binding = "KEYS"
+id = "PASTE_YOUR_KV_NAMESPACE_ID_HERE"
+
+# The admin code is NOT written here. Add it as a secret: Workers > nex-velo-keys > Settings > Variables and Secrets > ADMIN_CODE
