@@ -1,7 +1,7 @@
 /* Ad-free keys. People type a key (NXVL-0000-0000) into Settings > About to switch off the ads that Nex.Velo places itself.
-   Typing the admin code there instead unlocks an "admin" section in Settings, where keys are made and watched.
-   Everything is checked on the server (lib/keys.js). Ad blocking for the pages you browse is separate and always stays on.
-   Anything that is an ad of ours should carry the attribute data-nv-ad. It is hidden while a key is active. */
+   Settings > Admin Panel is where keys are made and watched. It asks for the admin code every time it is opened after the session ends.
+   Everything is checked on a key server (worker/keys-worker.js on Cloudflare, or lib/keys.js on Railway as a backup), never in this file.
+   Ads of ours should carry the attribute data-nv-ad. It is hidden while a key is active. Ad blocking for browsed pages is separate. */
 (() => {
   "use strict";
   const NV = window.NV;
@@ -10,11 +10,21 @@
   const { LS, esc, toast } = NV;
   const $ = (s, r = document) => r.querySelector(s);
 
+  // key servers, tried in this order. the first one that answers is used, so keys made on one are checked on the same one.
+  const BASES = () => [...new Set(["https://nex-velo-keys.nexero.workers.dev", "https://nex-velo.nexero.workers.dev", NV.api("")])];
   const post = async (path, body) => {
-    const r = await fetch(NV.api(path), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-    let d = {}; try { d = await r.json(); } catch {}
-    if (!r.ok) { const e = new Error(d.error || "the server answered " + r.status); e.status = r.status; throw e; }
-    return d;
+    let last = null;
+    for (const base of BASES()) {
+      try {
+        const r = await fetch(base + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+        if (!/json/i.test(r.headers.get("content-type") || "")) { last = new Error("the key server answered with something unexpected"); continue; }
+        const d = await r.json().catch(() => ({}));
+        if (r.ok) return d;
+        if (!d.error) continue; // not our key server
+        const e = new Error(d.error); e.status = r.status; throw e;
+      } catch (e) { if (e.status) throw e; last = e; }
+    }
+    throw new Error(last && /fetch|network|load/i.test(last.message) ? "the key server can't be reached right now" : (last && last.message) || "the key server can't be reached right now");
   };
   const device = (() => { let d = LS.get("nexvelo.device", ""); if (!d) { d = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now()); LS.set("nexvelo.device", d); } return d; })();
   const left = (ms, life) => {
@@ -61,34 +71,45 @@
     toast("ad-free key accepted");
   }
 
-  /* ---------- admin ---------- */
+  /* ---------- Settings > Admin Panel ---------- */
   const TK = "nexvelo.admintoken";
   let admin = null; try { const t = JSON.parse(LS.get(TK, "null")); if (t && t.exp > Date.now()) admin = t; } catch {}
   let list = [], fetchedAt = 0, ticker = 0;
   const call = async (path, body) => {
     try { return await post(path, { token: admin && admin.token, ...body }); }
-    catch (e) { if (e.status === 401 && admin) { lock(); } throw e; }
+    catch (e) { if (e.status === 401 && admin) lock(true); throw e; }
   };
-  function lock() { admin = null; LS.del(TK); clearInterval(ticker); const b = $("#nb-admin"); if (b) b.remove(); const s = $("#sec-admin"); if (s) { if (s.classList.contains("on")) NV.openSettings("general"); s.remove(); } }
-  function unlock() {
+  function showState() { const s = $("#sec-admin"); if (!s) return; $("#ak-lock", s).hidden = !!admin; $("#ak-panel", s).hidden = !admin; }
+  function lock(expired) { admin = null; LS.del(TK); clearInterval(ticker); showState(); if (expired) toast("admin session ended. enter the code again"); }
+  function buildAdmin() {
     if ($("#sec-admin")) return;
     const nav = $(".snav"), pane = $(".spane"), about = $('.snav .nb[data-sec="about"]'); if (!nav || !pane) return;
     const b = document.createElement("button"); b.className = "nb"; b.id = "nb-admin"; b.dataset.sec = "admin";
-    b.innerHTML = '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>admin';
+    b.innerHTML = '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>admin panel';
     about ? about.before(b) : nav.appendChild(b);
     const s = document.createElement("div"); s.className = "sec"; s.id = "sec-admin";
-    s.innerHTML = `<h2>admin</h2><p>make ad-free keys and see who is using them. only people who entered the admin code see this section. a key's time starts when someone first enters it.</p>
+    s.innerHTML = `<h2>admin panel</h2>
+<div id="ak-lock"><p>enter the admin code to make and manage ad-free keys.</p><label class="fld"><span>admin code</span><input type="password" id="ak-code" autocomplete="off" inputmode="numeric" maxlength="32"></label><div class="row"><button class="btn primary" id="ak-unlock" type="button">unlock</button></div><div id="ak-lockmsg" style="font-size:.8125rem;color:var(--dim)"></div></div>
+<div id="ak-panel" hidden><p>make ad-free keys and see who is using them. a key's time starts when someone first enters it.</p>
 <h3>make keys</h3>
 <div class="row"><label class="fld" style="margin:0"><span>how long it lasts</span><select id="ak-len"><option value="life">lifetime</option><option value="365">1 year</option><option value="183">6 months</option><option value="30" selected>1 month</option><option value="custom">custom</option></select></label>
 <div id="ak-custom" hidden><label class="fld" style="margin:0"><span>days</span><input type="text" id="ak-d" value="0" inputmode="numeric"></label><label class="fld" style="margin:0"><span>hours</span><input type="text" id="ak-h" value="0" inputmode="numeric"></label><label class="fld" style="margin:0"><span>minutes</span><input type="text" id="ak-m" value="0" inputmode="numeric"></label></div></div>
 <div class="row"><label class="fld" style="margin:0;flex:1;min-width:12rem"><span>who is it for (optional)</span><input type="text" id="ak-label" maxlength="60" autocomplete="off"></label><label class="fld" style="margin:0"><span>how many</span><input type="text" id="ak-n" value="1" inputmode="numeric" style="width:5rem"></label><button class="btn primary" id="ak-make" type="button">generate</button></div>
 <div id="ak-new"></div><div id="status-ak" style="min-height:1.25rem;font-size:.8125rem;color:var(--dim)"></div>
-<h3>all keys</h3><div class="row"><button class="btn" id="ak-refresh" type="button">refresh</button><button class="btn danger" id="ak-out" type="button">lock admin</button></div><div id="ak-list"></div>`;
+<h3>all keys</h3><div class="row"><button class="btn" id="ak-refresh" type="button">refresh</button><button class="btn danger" id="ak-out" type="button">lock admin panel</button></div><div id="ak-list"></div></div>`;
     pane.appendChild(s);
+    const unlockNow = async () => {
+      const code = $("#ak-code", s).value.trim(), msg = $("#ak-lockmsg", s); if (!code) return;
+      msg.textContent = "checking…";
+      try { const d = await post("/api/admin/login", { code }); admin = { token: d.token, exp: Date.now() + d.expiresIn - 60000 }; LS.set(TK, JSON.stringify(admin)); $("#ak-code", s).value = ""; msg.textContent = ""; showState(); startPanel(); }
+      catch (e) { msg.textContent = e.message; }
+    };
+    $("#ak-unlock", s).addEventListener("click", unlockNow);
+    $("#ak-code", s).addEventListener("keydown", (e) => { if (e.key === "Enter") unlockNow(); });
     $("#ak-len", s).addEventListener("change", (e) => { $("#ak-custom", s).hidden = e.target.value !== "custom"; });
     $("#ak-make", s).addEventListener("click", make);
     $("#ak-refresh", s).addEventListener("click", refresh);
-    $("#ak-out", s).addEventListener("click", () => { lock(); toast("admin locked"); });
+    $("#ak-out", s).addEventListener("click", () => { lock(false); toast("admin panel locked"); });
     s.addEventListener("click", async (e) => {
       const a = e.target.closest("[data-a]"); if (!a) return;
       const k = a.closest("[data-k]").dataset.k;
@@ -97,8 +118,9 @@
       if (a.dataset.a === "reset" && !confirm("let " + k + " be used again from a new device, with its full time?")) return;
       try { await call("/api/admin/keys/" + a.dataset.a, { key: k }); refresh(); } catch (er) { toast(er.message); }
     });
-    refresh(); clearInterval(ticker); ticker = setInterval(() => { if ($("#sec-admin.on")) { if (Date.now() - fetchedAt > 30000) refresh(); else draw(); } }, 15000);
+    showState(); if (admin) startPanel();
   }
+  function startPanel() { refresh(); clearInterval(ticker); ticker = setInterval(() => { if ($("#sec-admin.on") && admin) { if (Date.now() - fetchedAt > 30000) refresh(); else draw(); } }, 15000); }
   async function make() {
     const s = $("#sec-admin"), v = $("#ak-len", s).value, say = (t) => { $("#status-ak", s).textContent = t; };
     const body = { label: $("#ak-label", s).value.trim(), count: Math.max(1, Math.min(20, parseInt($("#ak-n", s).value, 10) || 1)) };
@@ -112,7 +134,7 @@
     } catch (e) { say(e.message); }
   }
   async function refresh() {
-    try { const d = await call("/api/admin/keys", {}); list = d.keys || []; fetchedAt = Date.now(); draw(); } catch (e) { const el = $("#ak-list"); if (el) el.innerHTML = '<div class="msg">' + esc(e.message) + "</div>"; }
+    try { const d = await call("/api/admin/keys", {}); list = d.keys || []; fetchedAt = Date.now(); draw(); } catch (e) { const el = $("#ak-list"); if (el && admin) el.innerHTML = '<div class="msg">' + esc(e.message) + "</div>"; }
   }
   function draw() {
     const el = $("#ak-list"); if (!el) return;
@@ -124,7 +146,7 @@
     }).join("") : '<div class="msg">no keys yet.</div>';
   }
 
-  /* ---------- the box in Settings > About ---------- */
+  /* ---------- the key box in Settings > About ---------- */
   function buildAbout() {
     const about = $("#sec-about"); if (!about || $("#adkey-box")) return;
     const box = document.createElement("div"); box.id = "adkey-box";
@@ -133,14 +155,11 @@
 <div class="row"><button class="btn primary" id="adkey-go" type="button">use key</button><button class="btn danger" id="adkey-clear" type="button" hidden>remove key</button></div><div id="adkey-status" style="margin-top:.5rem;font-size:.8125rem;color:var(--dim)"></div>`;
     const row = $(".about-row", about); row ? row.before(box) : about.appendChild(box);
     const inp = $("#adkey-in", box), status = $("#adkey-status", box);
-    inp.addEventListener("input", () => { let v = inp.value.toUpperCase(); if (!/^\d{0,6}$/.test(v)) { v = v.replace(/[^A-Z0-9]/g, ""); if (v.startsWith("NXVL")) v = v.slice(0, 4) + (v.length > 4 ? "-" + v.slice(4, 8) : "") + (v.length > 8 ? "-" + v.slice(8, 12) : ""); } inp.value = v; });
+    inp.addEventListener("input", () => { let v = inp.value.toUpperCase().replace(/[^A-Z0-9]/g, ""); if (v.startsWith("NXVL")) v = v.slice(0, 4) + (v.length > 4 ? "-" + v.slice(4, 8) : "") + (v.length > 8 ? "-" + v.slice(8, 12) : ""); inp.value = v; });
     const go = async () => {
       const v = inp.value.trim(); if (!v) return;
       status.textContent = "checking…";
-      try {
-        if (/^\d{6}$/.test(v)) { const d = await post("/api/admin/login", { code: v }); admin = { token: d.token, exp: Date.now() + d.expiresIn - 60000 }; LS.set(TK, JSON.stringify(admin)); inp.value = ""; unlock(); status.textContent = ""; toast("admin unlocked"); NV.openSettings("admin"); return; }
-        await redeem(v); inp.value = ""; paint();
-      } catch (e) { status.textContent = /^\d{6}$/.test(v) ? "that isn't a valid key" : e.message; }
+      try { await redeem(v); inp.value = ""; paint(); } catch (e) { status.textContent = e.message; }
     };
     $("#adkey-go", box).addEventListener("click", go);
     inp.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
@@ -148,7 +167,7 @@
     setInterval(paint, 20000); paint();
   }
 
-  buildAbout(); if (admin) unlock(); apply();
+  buildAbout(); buildAdmin(); apply();
   setTimeout(verify, 3000); setInterval(verify, 10 * 60 * 1000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) verify(); });
 })();
