@@ -1,0 +1,46 @@
+# Puts the virtual machine's files into this repo, so the site serves them itself:
+#   public/v86/  the emulator (libv86.js, v86.wasm) and its two BIOS files, taken from the official v86 npm package
+#   public/vm/   free systems to boot: Linux, Tiny Core, KolibriOS, FreeDOS and a Linux kernel, downloaded from the v86 author's site (i.copy.sh)
+# Run it from the Actions tab: "Fetch virtual machine files" > "Run workflow". It commits the files, and Railway / Vercel / Pages redeploy.
+name: Fetch virtual machine files
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get the emulator from npm
+        run: |
+          mkdir -p tmp public/v86 public/vm
+          cd tmp
+          npm pack v86
+          tar xzf v86-*.tgz
+          cd ..
+          cp tmp/package/build/libv86.js public/v86/
+          cp tmp/package/build/v86.wasm public/v86/
+          cp tmp/package/bios/seabios.bin tmp/package/bios/vgabios.bin public/v86/
+          rm -rf tmp
+          ls -la public/v86
+
+      - name: Download the systems
+        run: |
+          cd public/vm
+          for f in kolibri.img freedos722.img linux4.iso buildroot-bzimage68.bin TinyCore-11.0.iso; do
+            curl -fL --retry 3 -o "$f" "https://i.copy.sh/$f" || { echo "could not download $f"; rm -f "$f"; }
+          done
+          ls -la
+
+      - name: Commit
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add public/v86 public/vm
+          git commit -m "Add virtual machine files" || echo "nothing changed"
+          git push
