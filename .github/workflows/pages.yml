@@ -1,0 +1,46 @@
+# Builds the static site and publishes it on GitHub Pages.
+# In the repo: Settings > Pages > Source = "GitHub Actions".
+# The proxy only works when the site is at the ROOT of its address (a custom domain, or a repo named <user>.github.io).
+# A project page like <user>.github.io/Nex.Velo/ cannot run it, because browsers only allow a service worker for the folder it sits in.
+name: Publish static site
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install packages
+        run: npm install --no-audit --no-fund
+      - name: Copy the proxy files into public/
+        run: node scripts/copy-assets.js
+      - name: Build the static site
+        run: node scripts/build-static.js
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
