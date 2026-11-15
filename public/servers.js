@@ -107,6 +107,8 @@
 
   /* ----- backup API server: if nex-velo.up.railway.app can't be reached, the same request goes to railway2 ----- */
   const prevFetch = window.fetch.bind(window);
+  // order of API servers: nex-velo.up.railway.app (or this site's own server) first, then nex-velo.nexero.workers.dev, then railway2
+  const API_BACKUPS = ["https://nex-velo.nexero.workers.dev", API_BACKUP];
   let mainDownUntil = 0;
   window.fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input && input.url;
@@ -117,18 +119,16 @@
     }
     if (!m || method !== "GET") return prevFetch(input, init);
     const path = m[1], bad = (r) => r.status >= 502 && r.status <= 504;
-    const viaMain = () => prevFetch(input, init), viaBackup = () => prevFetch(API_BACKUP + path, init);
-    const [first, second] = Date.now() < mainDownUntil ? [viaBackup, viaMain] : [viaMain, viaBackup];
-    try {
-      const r = await first();
-      if (!bad(r)) return r;
-      if (first === viaMain) mainDownUntil = Date.now() + 60000;
-      try { const r2 = await second(); if (!bad(r2)) return r2; } catch {}
-      return r;
-    } catch (e) {
-      if (first === viaMain) mainDownUntil = Date.now() + 60000;
-      return second(); // throws if this one fails too
+    const tries = [() => prevFetch(input, init), ...API_BACKUPS.map((b) => () => prevFetch(b + path, init))];
+    const mainFirst = Date.now() >= mainDownUntil;
+    if (!mainFirst) tries.push(tries.shift()); // the main server failed a moment ago, so the backups go first
+    let lastRes = null, lastErr = null;
+    for (let i = 0; i < tries.length; i++) {
+      try { const r = await tries[i](); if (!bad(r)) return r; lastRes = r; } catch (e) { lastErr = e; }
+      if (i === 0 && mainFirst) mainDownUntil = Date.now() + 60000;
     }
+    if (lastRes) return lastRes;
+    throw lastErr;
   };
   window.NV.apiBackup = API_BACKUP;
   void API_MAIN;
