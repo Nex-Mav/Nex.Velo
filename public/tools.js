@@ -513,6 +513,7 @@ textarea.tl-ta:focus,.tl-in:focus{box-shadow:0 0 0 2px var(--focus)}
   /* ===== more tools: flashcards, grades, citations, calculator, notes, to-do, converter, pomodoro, world clock, hash, picker, QR code, calendar, whiteboard, markdown, regex ===== */
   const nst = document.createElement("style");
   nst.textContent = `
+.tl-card:has(#vs){max-width:none;width:100%}#vs canvas{width:100%!important;height:auto!important;image-rendering:pixelated}#vs>div:first-child{zoom:1.5}
 .nt-bar{display:flex;gap:.5rem;flex-wrap:wrap;justify-content:center;align-items:center}
 .nt-in{height:2.5rem;padding:0 .875rem;border:0;border-radius:.75rem;background:var(--btn);color:var(--fg);font:inherit;font-size:.875rem;outline:none;min-width:0}
 .nt-in:focus{box-shadow:0 0 0 2px var(--focus,rgba(128,128,128,.4))}
@@ -1075,19 +1076,19 @@ ${card ? `<div class="nt-card3d" id="fc">${esc(shown ? card.a : card.q)}</div><s
     root.innerHTML = `<div class="tl-card"><div class="nt-bar"><select class="nt-in" id="vp">${PRESETS.map((p) => `<option value="${p[0]}">${p[1]}</option>`).join("")}<option value="custom">my own image file…</option></select>
 <select class="nt-in" id="vmem">${[32, 64, 128, 256, 512].map((m) => `<option value="${m}">${m} MB memory</option>`).join("")}</select><button class="btn primary" id="vgo">start</button><button class="btn" id="vstop" disabled>stop</button></div>
 <div class="nt-bar" id="vc" hidden><select class="nt-in" id="vt"><option value="cdrom">CD-ROM (.iso)</option><option value="fda">floppy (.img)</option><option value="hda">hard disk (.img)</option><option value="bzimage">Linux kernel (bzImage)</option></select><input type="file" id="vf" class="nt-in nt-grow"></div>
-<div id="vs" tabindex="0" style="background:#000;color:#ddd;border-radius:.75rem;overflow:auto;min-height:18rem;text-align:left"><div style="white-space:pre;font:14px monospace;line-height:14px"></div><canvas style="display:none;max-width:100%"></canvas></div>
+<div id="vs" tabindex="0" style="background:#000;color:#ddd;border-radius:.75rem;overflow:auto;min-height:min(72vh,46rem);text-align:left"><div style="white-space:pre;font:14px monospace;line-height:14px"></div><canvas style="display:none;max-width:100%"></canvas></div>
 <div class="nt-bar"><button class="btn" id="vcad" disabled>Ctrl+Alt+Del</button><button class="btn" id="vfs" disabled>full screen</button><button class="btn" id="vmouse" disabled>capture mouse</button><button class="btn" id="vpause" disabled>pause</button></div>
 <small id="vmsg" style="color:var(--dim)">pick a system and press start. click the screen to type into it. a free, safe computer inside this page. it has no internet and forgets its files when stopped.</small></div>`;
     const q = (s) => root.querySelector(s), msg = (t) => { q("#vmsg").textContent = t; };
     let emu = null, paused = false;
     const sameOrigin = async (u) => { try { const r = await fetch(u, { method: "HEAD" }); return r.ok && !/html/i.test(r.headers.get("content-type") || ""); } catch { return false; } };
-    const firstOk = async (urls) => { for (const u of urls) if (await sameOrigin(u)) return u; return null; };
+    const tried = []; const firstOk = async (urls) => { for (const u of urls) { if (await sameOrigin(u)) return u; tried.push(u); } return null; };
     async function loadLib() {
-      if (window.V86) return;
+      if (window.V86 || window.V86Starter) return;
       const lib = await firstOk(["/v86/libv86.js", "https://cdn.jsdelivr.net/npm/v86@latest/build/libv86.js"]);
-      if (!lib) throw new Error("couldn't find the v86 emulator (libv86.js). add the v86 package so it is copied to public/v86, or check that cdn.jsdelivr.net is reachable");
+      if (!lib) throw new Error("couldn't find the v86 emulator. run the \"Fetch virtual machine files\" action on GitHub so it is copied to public/v86. looked in: " + tried.join(", "));
       await new Promise((ok, no) => { const s = document.createElement("script"); s.src = lib; s.onload = ok; s.onerror = () => no(new Error("couldn't load " + lib)); document.head.appendChild(s); });
-      if (!window.V86) throw new Error("the emulator loaded but didn't start");
+      if (!window.V86 && !window.V86Starter) throw new Error("the emulator loaded but didn't start");
     }
     const setBtns = (on) => ["#vstop", "#vcad", "#vfs", "#vmouse", "#vpause"].forEach((s) => { q(s).disabled = !on; });
     function stop() { if (emu) { try { emu.destroy(); } catch {} emu = null; } paused = false; q("#vpause").textContent = "pause"; setBtns(false); q("#vgo").disabled = false; const sc = q("#vs"); sc.innerHTML = '<div style="white-space:pre;font:14px monospace;line-height:14px"></div><canvas style="display:none;max-width:100%"></canvas>'; }
@@ -1095,7 +1096,7 @@ ${card ? `<div class="nt-card3d" id="fc">${esc(shown ? card.a : card.q)}</div><s
     q("#vp").addEventListener("change", () => { const c = q("#vp").value === "custom"; q("#vc").hidden = !c; const p = PRESETS.find((x) => x[0] === q("#vp").value); if (p) q("#vmem").value = String(p[4]); });
     q("#vp").dispatchEvent(new Event("change"));
     q("#vgo").addEventListener("click", async () => {
-      stop(); q("#vgo").disabled = true;
+      stop(); tried.length = 0; q("#vgo").disabled = true;
       try {
         msg("loading the emulator…"); await loadLib();
         const wasm = await firstOk(["/v86/v86.wasm", "https://cdn.jsdelivr.net/npm/v86@latest/build/v86.wasm"]);
@@ -1110,10 +1111,10 @@ ${card ? `<div class="nt-card3d" id="fc">${esc(shown ? card.a : card.q)}</div><s
           if (q("#vt").value === "hda" || q("#vt").value === "cdrom") cfg.boot_order = q("#vt").value === "cdrom" ? 0x213 : 0x312;
         } else {
           const p = PRESETS.find((x) => x[0] === id), url = await firstOk(["/vm/" + p[3], "https://i.copy.sh/" + p[3]]);
-          if (!url) throw new Error("couldn't download " + p[3] + ". the host may block other sites. download it yourself and either upload it to public/vm/ or use \"my own image file\"");
-          cfg[p[2]] = { url };
+          if (!url) throw new Error("couldn't find " + p[3] + ". run the \"Fetch virtual machine files\" action on GitHub so it is copied to public/vm/, or use \"my own image file\". looked in: " + tried.join(", "));
+          cfg[p[2]] = { url }; if (p[2] === "bzimage") cfg.cmdline = "tsc=reliable mitigations=off random.trust_cpu=on";
         }
-        msg("starting…"); emu = new window.V86(cfg);
+        msg("starting… a big image can take a minute to download"); emu = new (window.V86 || window.V86Starter)(cfg);
         emu.add_listener("emulator-ready", () => { msg("running. click the screen to type into it."); setBtns(true); });
         q("#vs").focus();
       } catch (e) { msg(String((e && e.message) || e)); q("#vgo").disabled = false; }
