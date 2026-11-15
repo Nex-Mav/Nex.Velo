@@ -1,19 +1,21 @@
-/* Games: open-source libraries (GN Math, Obsidian's Unblocked Revamped, UGS) and two game sites (DuckMath, Weslack).
-   Search, pick a game, and it opens in its own proxied frame, without the site's menus around it. */
+/* Games: open-source libraries (GN Math, Obsidian's Unblocked Revamped, UGS), an "All games" list that merges those three, and
+   game sites opened through the proxy (DuckMath, Weslack, Roblox). Search, pick a game, and it opens in its own frame. */
 (() => {
   "use strict";
   const { LS, proxyFrame, toast, esc, apiBase } = window.NV;
   const $ = (s, r = document) => r.querySelector(s);
   const PAGE = 60;
-  const SOURCES = ["gn", "obsidian", "ugs", "duckmath", "weslack"];
-  // These two are opened as whole websites through the proxy (no game list to read)
+  const LIBS = ["gn", "obsidian", "ugs"]; // the libraries merged into "All games" (DuckMath, Weslack and Roblox are whole sites, so they are not part of it)
+  const SOURCES = ["all", ...LIBS, "duckmath", "weslack", "roblox"];
+  // These are opened as whole websites through the proxy (no game list to read)
   // If a library's files won't load, its own website can still be opened through the proxy. (Change these addresses here if a site moves.)
   const SITES = { gn: { label: "GN Math website", url: "https://gn-math.github.io/" } };
-  const PROXIED = { duckmath: "https://duckmath.org/", weslack: "https://weslack.com/" };
-  const LABEL = { gn: "GN Math", obsidian: "Obsidian", ugs: "UGS", duckmath: "DuckMath", weslack: "Weslack" };
+  const PROXIED = { duckmath: "https://duckmath.org/", weslack: "https://weslack.com/", roblox: "https://nowgg.fun/" };
+  const NOTE = { roblox: "nowgg.fun isn't the official now.gg site. don't sign in with your main Roblox account there." };
+  const LABEL = { all: "All games", gn: "GN Math", obsidian: "Obsidian", ugs: "UGS", duckmath: "DuckMath", weslack: "Weslack", roblox: "Roblox" };
 
   let src = (() => { try { return JSON.parse(LS.get("nexvelo.games", "{}")).src; } catch { return null; } })();
-  if (!SOURCES.includes(src)) src = "gn"; // also catches a saved "cherri" from before it was removed
+  if (!SOURCES.includes(src)) src = "all"; // also catches a saved "cherri" from before it was removed
   const lists = {};
   let list = [], shown = 0, current = null;
 
@@ -34,25 +36,36 @@
   // always a full address, so it works the same whether the page and the server share a host or not
   const abs = (p) => new URL(/^https?:/i.test(p) ? p : apiBase() + p, location.href).href;
 
-  // the Obsidian tab is added here, so the page's HTML doesn't need to change
+  // the tabs for All games (first) and Roblox (last) are added here, so the page's HTML doesn't need to change
   (() => {
-    const tabs = $("#gtabs"); if (!tabs || tabs.querySelector('[data-g="obsidian"]')) return;
+    const tabs = $("#gtabs"); if (!tabs) return;
     const sample = tabs.querySelector("button"); if (!sample) return;
-    const b = document.createElement("button");
-    b.type = "button"; b.className = sample.className.replace(/\bon\b/, "").trim(); b.dataset.g = "obsidian"; b.textContent = LABEL.obsidian;
-    const after = tabs.querySelector('[data-g="gn"]');
-    after ? after.insertAdjacentElement("afterend", b) : tabs.appendChild(b);
+    const make = (k) => { const b = document.createElement("button"); b.type = "button"; b.className = sample.className.replace(/\bon\b/, "").trim(); b.dataset.g = k; b.textContent = LABEL[k]; return b; };
+    if (!tabs.querySelector('[data-g="obsidian"]')) { const after = tabs.querySelector('[data-g="gn"]'); const b = make("obsidian"); after ? after.insertAdjacentElement("afterend", b) : tabs.appendChild(b); }
+    if (!tabs.querySelector('[data-g="all"]')) tabs.insertBefore(make("all"), tabs.firstChild);
+    if (!tabs.querySelector('[data-g="roblox"]')) tabs.appendChild(make("roblox"));
   })();
+
+  async function loadLib(key) {
+    const r = await fetch(abs("/api/games/list?src=" + key));
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.games?.length) throw new Error(d.error || "the server answered " + r.status);
+    return (lists[key] = SITES[key] ? [{ name: SITES[key].label, site: SITES[key].url }, ...d.games] : d.games);
+  }
 
   async function load(key) {
     if (lists[key]) return lists[key];
     msg("loading the " + (LABEL[key] || key) + " games…");
-    try {
-      const r = await fetch(abs("/api/games/list?src=" + key));
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok || !d.games?.length) throw new Error(d.error || "the server answered " + r.status);
-      return (lists[key] = SITES[key] ? [{ name: SITES[key].label, site: SITES[key].url }, ...d.games] : d.games);
-    } catch (e) { msg("couldn't load the " + (LABEL[key] || key) + " games. " + (e.message || e), true); return null; }
+    if (key === "all") { // every library, merged, with repeated names removed
+      const parts = await Promise.all(LIBS.map(async (k) => { try { const g = lists[k] || (await loadLib(k)); return g.filter((x) => !x.site).map((x) => ({ ...x, _lib: k })); } catch { return []; } }));
+      const seen = new Set(), all = [];
+      for (const g of parts.flat()) { const n = g.name.trim().toLowerCase(); if (!n || seen.has(n)) continue; seen.add(n); all.push(g); }
+      if (!all.length) { msg("couldn't load any of the game libraries. check the server.", true); return null; }
+      all.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
+      return (lists.all = all);
+    }
+    try { return await loadLib(key); }
+    catch (e) { msg("couldn't load the " + (LABEL[key] || key) + " games. " + (e.message || e), true); return null; }
   }
 
   async function showSource(key, auto) {
@@ -61,7 +74,7 @@
     document.querySelectorAll("#gtabs button").forEach((b) => b.classList.toggle("on", b.dataset.g === key));
     $("#ggrid").innerHTML = ""; $("#gcount").textContent = ""; $("#gmore").hidden = true;
     if (PROXIED[key]) { // a whole website, opened through the proxy
-      const el = $("#gmsg"); el.style.whiteSpace = ""; el.textContent = LABEL[key] + " opens as its own website through the proxy. ";
+      const el = $("#gmsg"); el.style.whiteSpace = ""; el.textContent = LABEL[key] + " opens as its own website through the proxy. " + (NOTE[key] ? NOTE[key] + " " : "");
       const b = document.createElement("button");
       b.type = "button"; b.className = "btn"; b.textContent = "open " + LABEL[key]; b.addEventListener("click", () => play({ name: LABEL[key], site: PROXIED[key] }));
       el.appendChild(b);
@@ -87,7 +100,8 @@
     $("#ggrid").insertAdjacentHTML("beforeend", next.map((g, i) => {
       const hue = [...g.name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
       const bg = g.thumb ? `background-image:url('${esc(abs(g.thumb))}')` : `background-image:linear-gradient(135deg,hsl(${hue} 55% 38%),hsl(${(hue + 50) % 360} 55% 24%))`;
-      return `<button class="gcard" data-i="${start + i}"><i style="${bg}">${g.thumb ? "" : esc(g.name.trim()[0] || "?")}</i><span>${esc(g.name)}</span></button>`;
+      const tag = g._lib ? `<small style="display:block;opacity:.6;font-size:.6875rem">${esc(LABEL[g._lib])}</small>` : "";
+      return `<button class="gcard" data-i="${start + i}"><i style="${bg}">${g.thumb ? "" : esc(g.name.trim()[0] || "?")}</i><span>${esc(g.name)}${tag}</span></button>`;
     }).join(""));
     $("#gmore").hidden = shown >= list.length;
   }
