@@ -6,13 +6,15 @@
   const $ = (s, r = document) => r.querySelector(s);
   const PAGE = 60;
   const LIBS = ["gn", "obsidian", "ugs"]; // the libraries merged into "All games" (DuckMath, Weslack and Roblox are whole sites, so they are not part of it)
-  const SOURCES = ["all", ...LIBS, "duckmath", "weslack", "roblox"];
+  const SOURCES = ["all", ...LIBS, "duckmath", "weslack", "cloud"];
   // These are opened as whole websites through the proxy (no game list to read)
   // If a library's files won't load, its own website can still be opened through the proxy. (Change these addresses here if a site moves.)
   const SITES = { gn: { label: "GN Math website", url: "https://gn-math.github.io/" } };
-  const PROXIED = { duckmath: "https://duckmath.org/", weslack: "https://weslack.com/", roblox: "https://nowgg.fun/" };
-  const NOTE = { roblox: "nowgg.fun isn't the official now.gg site. don't sign in with your main Roblox account there." };
-  const LABEL = { all: "All games", gn: "GN Math", obsidian: "Obsidian", ugs: "UGS", duckmath: "DuckMath", weslack: "Weslack", roblox: "Roblox" };
+  const PROXIED = { duckmath: "https://duckmath.org/", weslack: "https://weslack.com/" };
+  // Cloud: games that run on a remote computer and are streamed to you. Each one opens through the proxy.
+  const CLOUD = [{ name: "Roblox", site: "https://nowgg.fun/apps/a/19900/b.html" }, { name: "Android", site: "https://nowgg.fun/apps/uncube/7074/now.html" }];
+  const NOTE = { cloud: "these run on nowgg.fun and open through the proxy. it isn't the official now.gg site, so don't sign in with an account you care about." };
+  const LABEL = { all: "All games", gn: "GN Math", obsidian: "Obsidian", ugs: "UGS", duckmath: "DuckMath", weslack: "Weslack", cloud: "Cloud" };
 
   let src = (() => { try { return JSON.parse(LS.get("nexvelo.games", "{}")).src; } catch { return null; } })();
   if (!SOURCES.includes(src)) src = "all"; // also catches a saved "cherri" from before it was removed
@@ -36,14 +38,14 @@
   // always a full address, so it works the same whether the page and the server share a host or not
   const abs = (p) => new URL(/^https?:/i.test(p) ? p : apiBase() + p, location.href).href;
 
-  // the tabs for All games (first) and Roblox (last) are added here, so the page's HTML doesn't need to change
+  // the tabs for All games (first) and Cloud (last) are added here, so the page's HTML doesn't need to change
   (() => {
     const tabs = $("#gtabs"); if (!tabs) return;
     const sample = tabs.querySelector("button"); if (!sample) return;
     const make = (k) => { const b = document.createElement("button"); b.type = "button"; b.className = sample.className.replace(/\bon\b/, "").trim(); b.dataset.g = k; b.textContent = LABEL[k]; return b; };
     if (!tabs.querySelector('[data-g="obsidian"]')) { const after = tabs.querySelector('[data-g="gn"]'); const b = make("obsidian"); after ? after.insertAdjacentElement("afterend", b) : tabs.appendChild(b); }
     if (!tabs.querySelector('[data-g="all"]')) tabs.insertBefore(make("all"), tabs.firstChild);
-    if (!tabs.querySelector('[data-g="roblox"]')) tabs.appendChild(make("roblox"));
+    if (!tabs.querySelector('[data-g="cloud"]')) tabs.appendChild(make("cloud"));
   })();
 
   async function loadLib(key) {
@@ -55,6 +57,7 @@
 
   async function load(key) {
     if (lists[key]) return lists[key];
+    if (key === "cloud") return (lists.cloud = CLOUD.map((c) => ({ ...c })));
     msg("loading the " + (LABEL[key] || key) + " games…");
     if (key === "all") { // every library, merged, with repeated names removed
       const parts = await Promise.all(LIBS.map(async (k) => { try { const g = lists[k] || (await loadLib(k)); return g.filter((x) => !x.site).map((x) => ({ ...x, _lib: k })); } catch { return []; } }));
@@ -84,6 +87,7 @@
     const games = await load(key);
     if (src !== key || !games) return;
     msg(""); filter();
+    if (key === "cloud") $("#gmsg").textContent = NOTE.cloud;
   }
 
   function filter() {
