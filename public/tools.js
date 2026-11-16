@@ -1074,12 +1074,12 @@ ${card ? `<div class="nt-card3d" id="fc">${esc(shown ? card.a : card.q)}</div><s
       ["kernel", "Linux kernel only (Buildroot)", "bzimage", "buildroot-bzimage68.bin", 128],
     ];
     root.innerHTML = `<div class="tl-card"><div class="nt-bar"><select class="nt-in" id="vp">${PRESETS.map((p) => `<option value="${p[0]}">${p[1]}</option>`).join("")}<option value="custom">my own image file…</option></select>
-<select class="nt-in" id="vmem">${[32, 64, 128, 256, 512].map((m) => `<option value="${m}">${m} MB memory</option>`).join("")}</select><button class="btn primary" id="vgo">start</button><button class="btn" id="vstop" disabled>stop</button></div>
+<select class="nt-in" id="vmem">${[32, 64, 128, 256, 512].map((m) => `<option value="${m}">${m} MB memory</option>`).join("")}</select><button class="btn primary" id="vgo">start</button><button class="btn" id="vstop" disabled>stop</button><button class="btn" id="vchk">check files</button></div>
 <div class="nt-bar" id="vc" hidden><select class="nt-in" id="vt"><option value="cdrom">CD-ROM (.iso)</option><option value="fda">floppy (.img)</option><option value="hda">hard disk (.img)</option><option value="bzimage">Linux kernel (bzImage)</option></select><input type="file" id="vf" class="nt-in nt-grow"></div>
 <div id="vs" tabindex="0" style="background:#000;color:#ddd;border-radius:.75rem;overflow:auto;min-height:min(72vh,46rem);text-align:left"><div style="white-space:pre;font:14px monospace;line-height:14px"></div><canvas style="display:none;max-width:100%"></canvas></div>
 <div class="nt-bar"><button class="btn" id="vcad" disabled>Ctrl+Alt+Del</button><button class="btn" id="vfs" disabled>full screen</button><button class="btn" id="vmouse" disabled>capture mouse</button><button class="btn" id="vpause" disabled>pause</button></div>
 <small id="vmsg" style="color:var(--dim)">pick a system and press start. click the screen to type into it. a free, safe computer inside this page. it has no internet and forgets its files when stopped.</small></div>`;
-    const q = (s) => root.querySelector(s), msg = (t) => { q("#vmsg").textContent = t; };
+    const q = (s) => root.querySelector(s), msg = (t) => { const el = q("#vmsg"); el.style.whiteSpace = ""; el.style.fontFamily = ""; el.style.textAlign = ""; el.textContent = t; };
     let emu = null, paused = false;
     const sameOrigin = async (u) => { try { const r = await fetch(u, { method: "HEAD" }); return r.ok && !/html/i.test(r.headers.get("content-type") || ""); } catch { return false; } };
     const tried = []; const firstOk = async (urls) => { for (const u of urls) { if (await sameOrigin(u)) return u; tried.push(u); } return null; };
@@ -1115,9 +1115,21 @@ ${card ? `<div class="nt-card3d" id="fc">${esc(shown ? card.a : card.q)}</div><s
           cfg[p[2]] = { url }; if (p[2] === "bzimage") cfg.cmdline = "tsc=reliable mitigations=off random.trust_cpu=on";
         }
         msg("starting… a big image can take a minute to download"); emu = new (window.V86 || window.V86Starter)(cfg);
+        emu.add_listener("download-error", (e) => msg("couldn't download " + ((e && (e.file_name || e.name)) || "a file the machine needs") + ". press check files to see what is missing."));
         emu.add_listener("emulator-ready", () => { msg("running. click the screen to type into it."); setBtns(true); });
         q("#vs").focus();
       } catch (e) { msg(String((e && e.message) || e)); q("#vgo").disabled = false; }
+    });
+    // lists every file the machine needs and where it was found, so a problem can be read straight off the screen
+    q("#vchk").addEventListener("click", async () => {
+      msg("checking…"); const rows = [];
+      const probe = async (name, urls) => { for (const u of urls) if (await sameOrigin(u)) return "ok       " + name + "  (" + u + ")"; return "MISSING  " + name + "  (looked in " + urls.join(" and ") + ")"; };
+      rows.push(await probe("emulator", ["/v86/libv86.js", "https://cdn.jsdelivr.net/npm/v86@latest/build/libv86.js"]));
+      rows.push(await probe("emulator engine", ["/v86/v86.wasm", "https://cdn.jsdelivr.net/npm/v86@latest/build/v86.wasm"]));
+      rows.push(await probe("bios", ["/v86/seabios.bin", "https://cdn.jsdelivr.net/gh/copy/v86@master/bios/seabios.bin"]));
+      rows.push(await probe("video bios", ["/v86/vgabios.bin", "https://cdn.jsdelivr.net/gh/copy/v86@master/bios/vgabios.bin"]));
+      for (const p of PRESETS) rows.push(await probe(p[1], ["/vm/" + p[3], "https://i.copy.sh/" + p[3]]));
+      const el = q("#vmsg"); el.style.whiteSpace = "pre-wrap"; el.style.fontFamily = "ui-monospace,monospace"; el.style.textAlign = "left"; el.textContent = rows.join("\n") + (rows.some((r) => r.startsWith("MISSING")) ? "\n\nrun the \"Fetch virtual machine files\" action on GitHub to add the missing ones." : "\n\nall files found.");
     });
     q("#vstop").addEventListener("click", () => { stop(); msg("stopped."); });
     q("#vcad").addEventListener("click", () => { if (emu) emu.keyboard_send_scancodes([0x1d, 0x38, 0x53, 0xd3, 0xb8, 0x9d]); });
