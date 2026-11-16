@@ -7,7 +7,7 @@ const TOKEN_MS = 12 * 60 * 60 * 1000, MAX_MS = 100 * 365 * 86400000;
 const CORS = { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type", "access-control-allow-methods": "POST,OPTIONS", "access-control-max-age": "86400" };
 const enc = new TextEncoder();
 
-const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...CORS, "content-type": "application/json", "cache-control": "no-store" } });
+const json = (data, status = 200) => new Response(JSON.stringify({ nxvl: 1, ...data }), { status, headers: { ...CORS, "content-type": "application/json", "cache-control": "no-store" } });
 const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 async function hmac(secret, text) {
   const k = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
