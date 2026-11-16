@@ -116,6 +116,7 @@ body.desktop #tabbar,body.desktop #toolbar,body.desktop #views{display:none!impo
 .dk-win.max .dk-rz{display:none}
 .dk-dock{position:absolute;left:0;right:0;bottom:0;height:${DOCK_H}px;z-index:5;display:flex;align-items:center;justify-content:center;border-top:1px solid color-mix(in srgb,var(--fg) 16%,transparent)}
 .dk-dockin{display:flex;align-items:flex-end;gap:.5rem;padding:0 .75rem 6px}
+.dk-dock{transition:transform .28s cubic-bezier(.3,.9,.3,1)}.dk-dock.hide{transform:translateY(calc(100% + 6px))}
 .dk-ic{position:relative;width:46px;height:46px;border:0;padding:0;background:none;transition:transform .18s cubic-bezier(.3,.9,.3,1);transform-origin:50% 100%}
 .dk-ic .dk-tile{width:46px;height:46px;border-radius:12px}
 .dk-ic:hover{transform:translateY(-6px) scale(1.28)}
@@ -528,22 +529,38 @@ body.desktop #tabbar,body.desktop #toolbar,body.desktop #views{display:none!impo
     NV.onSettingsApps = () => { paintDock(); buildIcons(); };
   }
 
+  /* ---------- the dock hides until the pointer reaches the bottom edge; it stays while the pointer is on it and for 5 seconds after.
+     Settings > Appearance > "always show the dock" keeps it there for good. ---------- */
+  function startDockHide() {
+    const el = $(".dk-dock"); if (!el) return;
+    let hideT = 0, hovering = false, wasAlways = !!NV.settings.dockAlways;
+    const always = () => !!NV.settings.dockAlways;
+    const show = () => { clearTimeout(hideT); el.classList.remove("hide"); };
+    const arm = () => { clearTimeout(hideT); if (always() || hovering) return; hideT = setTimeout(() => { if (!hovering && !always()) el.classList.add("hide"); }, 5000); };
+    const edge = (e) => { if (always()) return; if (e.clientY >= innerHeight - (e.pointerType === "touch" ? 24 : 6)) { show(); arm(); } };
+    root.addEventListener("pointermove", edge); root.addEventListener("pointerdown", edge);
+    el.addEventListener("pointerenter", () => { hovering = true; show(); });
+    el.addEventListener("pointerleave", () => { hovering = false; arm(); });
+    setInterval(() => { const a = always(); if (a) show(); else if (wasAlways) arm(); wasAlways = a; }, 400);
+    if (!always()) el.classList.add("hide");
+  }
+
   /* ---------- snow that lands on windows, piles up, travels with a dragged window and sweeps away with the cursor ----------
-     On when the Christmas theme is chosen and "falling snowflakes" is switched on (Settings > Appearance, or the first-visit setup). */
+     On when "falling snowflakes" is switched on (Settings > Appearance, or the first-visit setup). */
   function startSnow() {
     const cv = document.createElement("canvas"); cv.id = "dk-snow"; cv.hidden = true; cv.setAttribute("aria-hidden", "true");
     root.insertBefore(cv, layer.nextSibling);
     const ctx = cv.getContext("2d"), BIN = 4, MAXH = 18;
     let flakes = [], parts = [], raf = 0, last = 0, piles = new WeakMap(), dock = null, mouse = null;
     const calm = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const want = () => !!(NV.settings.snow && NV.settings.theme === "christmas") && !calm() && !document.hidden;
+    const want = () => !!NV.settings.snow && !calm() && !document.hidden;
     const fit = () => { const d = devicePixelRatio || 1; cv.width = innerWidth * d; cv.height = innerHeight * d; ctx.setTransform(d, 0, 0, d, 0, 0); };
     const spawn = (f, top) => { f.x = Math.random() * innerWidth; f.y = top ? -Math.random() * innerHeight : -8; return f; };
     const seed = () => { flakes = Array.from({ length: Math.round(Math.min(240, innerWidth / 5.5)) }, () => spawn({ r: 1 + Math.random() * 2.4, v: 28 + Math.random() * 40, p: Math.random() * 6.28, s: 0.4 + Math.random() * 0.9 }, true)); };
     function surfaces() {
       const ws = wins.filter((w) => !w.min && w.el.style.display !== "none").map((w) => ({ key: w, r: w.el.getBoundingClientRect(), z: +w.el.style.zIndex || 0 }));
       const out = ws.map((s) => ({ key: s.key, x0: s.r.left, x1: s.r.right, y: s.r.top, z: s.z }));
-      out.push({ key: "dock", x0: 0, x1: innerWidth, y: innerHeight - DOCK_H, z: -1 });
+      out.push({ key: "dock", x0: 0, x1: innerWidth, y: innerHeight - ($(".dk-dock") && $(".dk-dock").classList.contains("hide") ? 0 : DOCK_H), z: -1 });
       return { out, ws };
     }
     const pileOf = (s) => {
@@ -620,7 +637,7 @@ body.desktop #tabbar,body.desktop #toolbar,body.desktop #views{display:none!impo
   }
 
   NV.desktopStart = () => {
-    NV.desktopMode = true; document.body.classList.add("desktop"); build(); startSnow();
+    NV.desktopMode = true; document.body.classList.add("desktop"); build(); startDockHide(); startSnow();
     for (const id of ["tabbar", "toolbar", "views"]) { const el = document.getElementById(id); if (el) { el.hidden = true; el.style.setProperty("display", "none", "important"); } } // the normal browser bars are not used here
   };
   NV.desktopWindows = () => wins.map((w) => ({ kind: w.kind, min: w.min, max: w.max, focus: w === focused }));
