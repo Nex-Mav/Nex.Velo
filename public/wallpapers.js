@@ -45,13 +45,13 @@
     '<div class="card"><h2>Lunch menu</h2><p>Monday: baked pasta, garden salad, fruit cup.</p><p>Tuesday: chicken wrap, carrot sticks, yogurt.</p><p>Wednesday: vegetable soup, bread roll, apple slices.</p></div>' +
     '<div class="card"><h2>Upcoming events</h2><ul><li>Dec 5: Winter concert, 7:00 PM</li><li>Dec 12: Parent and teacher conferences</li><li>Dec 18: Last day before winter break</li></ul></div>' +
     '<div class="card"><h2>Student resources</h2><p>Library hours, tutoring schedule, counseling office and the student handbook can be found under the Academics menu.</p></div></section>' +
-    '<footer>Maplewood Academy · 410 Elm Street · Office hours 8:00 AM to 4:00 PM · All rights reserved.</footer>';
+    '<footer>Maplewood Academy \u00b7 410 Elm Street \u00b7 Office hours 8:00 AM to 4:00 PM \u00b7 All rights reserved.</footer>';
   const st = document.createElement("style"); st.textContent = css; document.head.appendChild(st);
   const box = document.createElement("div"); box.id = "nv-decoy"; box.innerHTML = html;
   document.body.appendChild(box); window.__nvDecoy = true;
   box.addEventListener("click", (e) => { if (e.target.closest("a")) e.preventDefault(); });
   // look like the school site in the tab strip too
-  const title = "Maplewood Academy – Home", icon = document.querySelector('link[rel="icon"]'), oldIcon = icon && icon.href;
+  const title = "Maplewood Academy \u2013 Home", icon = document.querySelector('link[rel="icon"]'), oldIcon = icon && icon.href;
   if (icon) icon.href = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#12305a"/><text x="16" y="23" font-size="20" text-anchor="middle" fill="#fff" font-family="Georgia">M</text></svg>');
   const keepTitle = setInterval(() => { if (document.title !== title) document.title = title; }, 300);
   // scramble: every letter shows a random letter until the page has loaded, then the words settle from left to right
@@ -66,7 +66,7 @@
     const k = settleAt ? Math.min(1, (now - settleAt) / 1100) : 0, upTo = k * total; let at = 0;
     for (const x of nodes) {
       let out = "";
-      for (let i = 0; i < x.t.length; i++) { const c = x.t[i]; out += /\s|[.,:;'"·–\-0-9]/.test(c) || at + i < upTo ? c : ABC[(Math.random() * ABC.length) | 0]; }
+      for (let i = 0; i < x.t.length; i++) { const c = x.t[i]; out += /\s|[.,:;'"\u00b7\u2013\-0-9]/.test(c) || at + i < upTo ? c : ABC[(Math.random() * ABC.length) | 0]; }
       at += x.t.length; if (x.n.nodeValue !== out) x.n.nodeValue = out;
     }
     if (k < 1) requestAnimationFrame(frame);
@@ -94,7 +94,7 @@
   st.textContent = "#nv-splash{position:fixed;inset:0;z-index:2147483600;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:1.5rem;background:var(--bg,#000);color:var(--fg,#f2f2f2);font-family:var(--font,'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace);text-align:center;transition:opacity .4s ease}#nv-splash.out{opacity:0;pointer-events:none}#nv-splash .b{font-size:clamp(2rem,9vw,3.75rem);font-weight:300;letter-spacing:-.03em}#nv-splash .s{font-size:1rem;opacity:.75}#nv-splash .w{font-size:.8125rem;opacity:.45}";
   document.head.appendChild(st);
   const box = document.createElement("div"); box.id = "nv-splash"; box.setAttribute("aria-hidden", "true");
-  box.innerHTML = '<div class="b">Nex.Velo</div><div class="s">loading the full website</div><div class="w">music · games · movies · tools · ai · desktop</div>';
+  box.innerHTML = '<div class="b">Nex.Velo</div><div class="s">loading the full website</div><div class="w">music \u00b7 games \u00b7 movies \u00b7 tools \u00b7 ai \u00b7 desktop</div>';
   document.body.appendChild(box);
   const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT), nodes = [];
   for (let n; (n = walker.nextNode());) if (n.nodeValue.trim()) nodes.push({ n, t: n.nodeValue });
@@ -111,7 +111,7 @@
       lastDraw = now; let at = 0;
       for (const x of nodes) {
         let out = "";
-        for (let i = 0; i < x.t.length; i++) { const c = x.t[i]; out += /\s|[.,:;'"·–\-0-9]/.test(c) || at + i < upTo ? c : ABC[(Math.random() * ABC.length) | 0]; }
+        for (let i = 0; i < x.t.length; i++) { const c = x.t[i]; out += /\s|[.,:;'"\u00b7\u2013\-0-9]/.test(c) || at + i < upTo ? c : ABC[(Math.random() * ABC.length) | 0]; }
         at += x.t.length; if (x.n.nodeValue !== out) x.n.nodeValue = out;
       }
     }
@@ -335,7 +335,7 @@
       fld.innerHTML = '<span>proxy engine</span><select id="proxy-engine"><option value="scramjet">Scramjet (default)</option><option value="uv">Ultraviolet</option><option value="kaze">Kaze (needs the Build Kaze action)</option></select>';
       engineBox.closest("label").after(fld);
       const pe = fld.querySelector("select"); pe.value = NV.settings.proxy || "scramjet";
-      pe.addEventListener("change", () => { NV.settings.proxy = pe.value; NV.save(); NV.toast("switching proxy engine…"); setTimeout(() => location.reload(), 400); });
+      pe.addEventListener("change", () => { NV.settings.proxy = pe.value; NV.save(); NV.toast("switching proxy engine\u2026"); setTimeout(() => location.reload(), 400); });
     }
 
     /* ----- "Virtual machine" in the nine-dot Apps menu (it opens the Tools page on the virtual machine) ----- */
@@ -383,7 +383,7 @@
     });
     layout.addEventListener("click", (e) => {
       const b = e.target.closest("[data-m]"); if (!b || b.disabled) return;
-      NV.settings.mode = b.dataset.m; NV.save(); NV.toast("switching layout…"); setTimeout(() => location.reload(), 350);
+      NV.settings.mode = b.dataset.m; NV.save(); NV.toast("switching layout\u2026"); setTimeout(() => location.reload(), 350);
     });
     paintLayout();
 
