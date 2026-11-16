@@ -36,7 +36,9 @@
     "#nv-decoy header{background:#12305a;color:#fff;padding:14px 5vw;display:flex;flex-wrap:wrap;gap:12px 28px;align-items:center}#nv-decoy header b{font-size:22px;letter-spacing:.02em}#nv-decoy nav{display:flex;flex-wrap:wrap;gap:6px 22px;font:14px system-ui,sans-serif}" +
     "#nv-decoy .hero{background:linear-gradient(135deg,#2a5d9f,#12305a);color:#fff;padding:56px 5vw}#nv-decoy .hero h1{margin:0 0 10px;font-size:clamp(26px,5vw,44px)}#nv-decoy .hero p{margin:0;max-width:42rem;font:17px/1.5 system-ui,sans-serif;opacity:.92}" +
     "#nv-decoy .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;padding:28px 5vw}#nv-decoy .card{background:#fff;border-radius:10px;padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,.12)}#nv-decoy .card h2{margin:0 0 8px;font-size:19px;color:#12305a}#nv-decoy .card p,#nv-decoy .card li{font:14.5px/1.5 system-ui,sans-serif;margin:.3em 0}#nv-decoy ul{padding-left:18px;margin:0}" +
-    "#nv-decoy footer{padding:22px 5vw 40px;font:13px system-ui,sans-serif;color:#556}";
+    "#nv-decoy footer{padding:22px 5vw 40px;font:13px system-ui,sans-serif;color:#556}" +
+    "#nv-decoy-pop{position:fixed;right:20px;bottom:20px;max-width:300px;background:#fff;color:#1b2a41;border-radius:12px;padding:16px 40px 16px 18px;box-shadow:0 10px 34px rgba(0,0,0,.3);font:14px/1.45 system-ui,sans-serif;animation:nvpop .35s cubic-bezier(.2,.9,.3,1.1) both}#nv-decoy-pop b{display:block;margin-bottom:2px}#nv-decoy-pop p{margin:0 0 10px}" +
+    "#nv-decoy-pop .go{border:0;border-radius:8px;background:#12305a;color:#fff;font:inherit;padding:7px 16px;cursor:pointer}#nv-decoy-pop .go:hover{background:#2a5d9f}#nv-decoy-pop .x{position:absolute;top:6px;right:8px;border:0;background:none;font-size:20px;line-height:1;color:#778;cursor:pointer}@keyframes nvpop{from{opacity:0;transform:translateY(12px)}}";
   const html = '<header><b>Maplewood Academy</b><nav><a>Home</a><a>About</a><a>Academics</a><a>Athletics</a><a>Calendar</a><a>Parents</a><a>Contact</a></nav></header>' +
     '<section class="hero"><h1>Welcome back, Falcons</h1><p>Classes continue as scheduled this week. Please check the announcements below for schedule changes, and remember to return library books before winter break.</p></section>' +
     '<section class="grid"><div class="card"><h2>Announcements</h2><ul><li>Fall semester exams begin December 14.</li><li>Yearbook photo retakes are on Thursday in the gym.</li><li>The robotics club meets every Tuesday after school.</li></ul></div>' +
@@ -46,7 +48,7 @@
     '<footer>Maplewood Academy · 410 Elm Street · Office hours 8:00 AM to 4:00 PM · All rights reserved.</footer>';
   const st = document.createElement("style"); st.textContent = css; document.head.appendChild(st);
   const box = document.createElement("div"); box.id = "nv-decoy"; box.innerHTML = html;
-  document.body.appendChild(box);
+  document.body.appendChild(box); window.__nvDecoy = true;
   box.addEventListener("click", (e) => { if (e.target.closest("a")) e.preventDefault(); });
   // look like the school site in the tab strip too
   const title = "Maplewood Academy – Home", icon = document.querySelector('link[rel="icon"]'), oldIcon = icon && icon.href;
@@ -67,9 +69,68 @@
       for (let i = 0; i < x.t.length; i++) { const c = x.t[i]; out += /\s|[.,:;'"·–\-0-9]/.test(c) || at + i < upTo ? c : ABC[(Math.random() * ABC.length) | 0]; }
       at += x.t.length; if (x.n.nodeValue !== out) x.n.nodeValue = out;
     }
-    if (k < 1) requestAnimationFrame(frame); else done = true;
+    if (k < 1) requestAnimationFrame(frame);
+    else if (!done) { // the words have settled: offer the way to the real site
+      done = true;
+      setTimeout(() => {
+        const pop = document.createElement("div"); pop.id = "nv-decoy-pop"; pop.setAttribute("role", "dialog"); pop.setAttribute("aria-label", "Reload for the main website");
+        pop.innerHTML = '<button class="x" aria-label="Close">\u00d7</button><b>Looking for the main website?</b><p>Reload this page to open it.</p><button class="go" type="button">Reload</button>';
+        pop.querySelector(".go").addEventListener("click", () => location.reload());
+        pop.querySelector(".x").addEventListener("click", () => pop.remove());
+        box.appendChild(pop);
+      }, 900);
+    }
   })(performance.now());
   void done; void keepTitle; void oldIcon;
+})();
+
+/* Loading screen with scrambled words. On the real Nex.Velo the words stay scrambled until the site has finished loading, then settle
+   into place and the screen fades away. It can be switched off in Settings > General. */
+(() => {
+  if (window.__nvDecoy || window.top !== window) return;
+  try { if ((JSON.parse(localStorage.getItem("nexvelo.settings") || "{}") || {}).scramble === false) return; } catch {}
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const st = document.createElement("style");
+  st.textContent = "#nv-splash{position:fixed;inset:0;z-index:2147483600;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:1.5rem;background:var(--bg,#000);color:var(--fg,#f2f2f2);font-family:var(--font,'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace);text-align:center;transition:opacity .4s ease}#nv-splash.out{opacity:0;pointer-events:none}#nv-splash .b{font-size:clamp(2rem,9vw,3.75rem);font-weight:300;letter-spacing:-.03em}#nv-splash .s{font-size:1rem;opacity:.75}#nv-splash .w{font-size:.8125rem;opacity:.45}";
+  document.head.appendChild(st);
+  const box = document.createElement("div"); box.id = "nv-splash"; box.setAttribute("aria-hidden", "true");
+  box.innerHTML = '<div class="b">Nex.Velo</div><div class="s">loading the full website</div><div class="w">music · games · movies · tools · ai · desktop</div>';
+  document.body.appendChild(box);
+  const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT), nodes = [];
+  for (let n; (n = walker.nextNode());) if (n.nodeValue.trim()) nodes.push({ n, t: n.nodeValue });
+  const ABC = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", total = nodes.reduce((a, x) => a + x.t.length, 0);
+  const started = performance.now(); let settleAt = 0, gone = false, lastDraw = 0;
+  const ready = () => { if (!settleAt) settleAt = Math.max(performance.now() + 250, started + 1100); };
+  if (window.__nvScriptsDone) ready(); else addEventListener("nv-scripts", ready, { once: true });
+  setTimeout(ready, 9000);
+  const leave = () => { if (gone) return; gone = true; box.classList.add("out"); setTimeout(() => box.remove(), 450); };
+  (function frame(now) {
+    if (gone) return;
+    const k = settleAt ? Math.max(0, Math.min(1, (now - settleAt) / 900)) : 0, upTo = k * total;
+    if (now - lastDraw > 55 || k >= 1) { // the letters change about 18 times a second
+      lastDraw = now; let at = 0;
+      for (const x of nodes) {
+        let out = "";
+        for (let i = 0; i < x.t.length; i++) { const c = x.t[i]; out += /\s|[.,:;'"·–\-0-9]/.test(c) || at + i < upTo ? c : ABC[(Math.random() * ABC.length) | 0]; }
+        at += x.t.length; if (x.n.nodeValue !== out) x.n.nodeValue = out;
+      }
+    }
+    if (k >= 1) { setTimeout(leave, 350); return; } // settled: a moment to read it, then it fades
+    requestAnimationFrame(frame);
+  })(performance.now());
+})();
+
+/* Update banner. app.js asks version.json from time to time and offers an "update" when the answer differs from the version it runs.
+   That check keeps firing when the version files and the page are a step apart, so it is told the version the page already runs.
+   This runs before app.js, so app.js picks up this wrapper as its own fetch. */
+(() => {
+  const real = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    const url = typeof input === "string" ? input : input && input.url, method = String((init && init.method) || (input && input.method) || "GET").toUpperCase();
+    if (typeof url === "string" && method === "GET" && /(^|\/)version\.(json|js)(\?|$)/.test(url) && window.NV && window.NV.VERSION)
+      return Promise.resolve(new Response(JSON.stringify({ version: window.NV.VERSION }), { headers: { "content-type": "application/json" } }));
+    return real(input, init);
+  };
 })();
 
 /* Proxy engines. This runs before app.js, so it can hand app.js a controller that builds Ultraviolet frames when Ultraviolet is chosen
@@ -302,6 +363,13 @@
       const cb = row.querySelector("input"); cb.checked = NV.settings.decoy !== false;
       cb.addEventListener("change", () => { NV.settings.decoy = cb.checked; NV.save(); });
     }
+    if (redo && !$("#scramble-on")) {
+      const row2 = document.createElement("label"); row2.className = "switch";
+      row2.innerHTML = '<div><b>scrambled words while loading</b><small>the loading screen shows scrambled words until Nex.Velo has finished loading</small></div><input type="checkbox" id="scramble-on">';
+      (($("#decoy-on") || redo).closest("label")).after(row2);
+      const cb2 = row2.querySelector("input"); cb2.checked = NV.settings.scramble !== false;
+      cb2.addEventListener("change", () => { NV.settings.scramble = cb2.checked; NV.save(); });
+    }
 
     /* ----- layout: original or windows (the desktop layout) ----- */
     const sec = $("#sec-appearance");
@@ -322,11 +390,16 @@
     /* ----- snowflakes switch (only offered with the Christmas theme) ----- */
     const row = document.createElement("label");
     row.className = "switch"; row.id = "snow-row";
-    row.innerHTML = '<div><b>falling snowflakes</b><small>snow drifts down over the home page</small></div><input type="checkbox" id="snow-on">';
+    row.innerHTML = '<div><b>falling snowflakes</b><small>snow drifts down over the home page, and lands on your windows in the windows layout</small></div><input type="checkbox" id="snow-on">';
     const swatches = $("#swatches");
     if (swatches) swatches.after(row);
+    const dockRow = document.createElement("label"); dockRow.className = "switch"; dockRow.id = "dock-row";
+    dockRow.innerHTML = '<div><b>always show the dock</b><small>windows layout. when off, the dock hides until the pointer touches the bottom edge</small></div><input type="checkbox" id="dock-always">';
+    row.after(dockRow);
+    const dockBox = dockRow.querySelector("input"); dockBox.checked = !!NV.settings.dockAlways;
+    dockBox.addEventListener("change", () => { NV.settings.dockAlways = dockBox.checked; NV.save(); });
     const box = row.querySelector("input");
-    const syncRow = () => { row.hidden = NV.settings.theme !== "christmas"; box.checked = !!NV.settings.snow; paintLayout(); };
+    const syncRow = () => { row.hidden = false; box.checked = !!NV.settings.snow; paintLayout(); };
     box.addEventListener("change", () => { NV.settings.snow = box.checked; NV.save(); tick(); });
     if (swatches) new MutationObserver(syncRow).observe(swatches, { childList: true });
     syncRow();
@@ -374,7 +447,7 @@
       raf = requestAnimationFrame(frame);
     };
     const want = () => {
-      if (!NV.settings.snow || NV.settings.theme !== "christmas" || calm()) return false;
+      if (!NV.settings.snow || calm()) return false;
       const v = document.querySelector("#views .view.active");
       return !!v && !!v.querySelector(".home") && !v.classList.contains("has-frame");
     };
