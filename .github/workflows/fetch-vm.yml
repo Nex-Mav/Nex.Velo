@@ -1,7 +1,8 @@
 # Puts the virtual machine's files into this repo, so the site serves them itself:
-#   public/v86/  the emulator (libv86.js, v86.wasm) and its two BIOS files, taken from the official v86 npm package
-#   public/vm/   free systems to boot: Linux, Tiny Core, KolibriOS, FreeDOS and a Linux kernel, downloaded from the v86 author's site (i.copy.sh)
-# Run it from the Actions tab: "Fetch virtual machine files" > "Run workflow". It commits the files, and Railway / Vercel / Pages redeploy.
+#   public/v86/  the emulator (libv86.js, v86.wasm) and its two BIOS files
+#   public/vm/   free systems to boot: Linux, Tiny Core, KolibriOS, FreeDOS and a Linux kernel (from the v86 author's site, i.copy.sh)
+# Run it from the Actions tab: "Fetch virtual machine files" > "Run workflow". It commits the files, and the site redeploys.
+# Every file has a second place to try, and the job prints what it got, so you can read the log if something is missing.
 name: Fetch virtual machine files
 
 on:
@@ -16,16 +17,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Get the emulator from npm
+      - name: Get the emulator
         run: |
           mkdir -p tmp public/v86 public/vm
-          cd tmp
-          npm pack v86
-          tar xzf v86-*.tgz
-          cd ..
-          cp tmp/package/build/libv86.js public/v86/
-          cp tmp/package/build/v86.wasm public/v86/
-          cp tmp/package/bios/seabios.bin tmp/package/bios/vgabios.bin public/v86/
+          (cd tmp && npm pack v86 && tar xzf v86-*.tgz) || echo "npm pack v86 failed, using the downloads below"
+          get() { # name, then every place to try
+            name="$1"; shift
+            hit=$(find tmp -name "$name" -type f 2>/dev/null | head -n 1)
+            if [ -n "$hit" ]; then cp "$hit" "public/v86/$name"; echo "ok   $name (from the npm package)"; return; fi
+            for url in "$@"; do
+              if curl -fL --retry 2 -o "public/v86/$name" "$url" && [ -s "public/v86/$name" ]; then echo "ok   $name ($url)"; return; fi
+            done
+            rm -f "public/v86/$name"; echo "FAIL $name"
+          }
+          get libv86.js https://cdn.jsdelivr.net/npm/v86@latest/build/libv86.js https://copy.sh/v86/build/libv86.js
+          get v86.wasm https://cdn.jsdelivr.net/npm/v86@latest/build/v86.wasm https://copy.sh/v86/build/v86.wasm
+          get seabios.bin https://raw.githubusercontent.com/copy/v86/master/bios/seabios.bin https://cdn.jsdelivr.net/gh/copy/v86@master/bios/seabios.bin
+          get vgabios.bin https://raw.githubusercontent.com/copy/v86/master/bios/vgabios.bin https://cdn.jsdelivr.net/gh/copy/v86@master/bios/vgabios.bin
           rm -rf tmp
           ls -la public/v86
 
@@ -33,7 +41,7 @@ jobs:
         run: |
           cd public/vm
           for f in kolibri.img freedos722.img linux4.iso buildroot-bzimage68.bin TinyCore-11.0.iso; do
-            curl -fL --retry 3 -o "$f" "https://i.copy.sh/$f" || { echo "could not download $f"; rm -f "$f"; }
+            if curl -fL --retry 3 -o "$f" "https://i.copy.sh/$f" && [ -s "$f" ]; then echo "ok   $f"; else echo "FAIL $f"; rm -f "$f"; fi
           done
           ls -la
 
