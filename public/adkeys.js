@@ -13,18 +13,17 @@
   // key servers, tried in this order. the first one that answers is used, so keys made on one are checked on the same one.
   const BASES = () => [...new Set(["https://nex-velo-keys.nexero.workers.dev", "https://nex-velo.nexero.workers.dev", NV.api("")])];
   const post = async (path, body) => {
-    let last = null;
+    let last = "";
     for (const base of BASES()) {
       try {
         const r = await fetch(base + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-        if (!/json/i.test(r.headers.get("content-type") || "")) { last = new Error("the key server answered with something unexpected"); continue; }
-        const d = await r.json().catch(() => ({}));
+        const d = await r.json().catch(() => null);
+        if (!d || d.nxvl !== 1) { last = "answered, but it isn't the key server"; continue; } // some other server, or its own "not found"
         if (r.ok) return d;
-        if (!d.error) continue; // not our key server
-        const e = new Error(d.error); e.status = r.status; throw e;
-      } catch (e) { if (e.status) throw e; last = e; }
+        const e = new Error(d.error || "the key server answered " + r.status); e.status = r.status; throw e;
+      } catch (e) { if (e.status) throw e; last = "couldn't connect"; }
     }
-    throw new Error(last && /fetch|network|load/i.test(last.message) ? "the key server can't be reached right now" : (last && last.message) || "the key server can't be reached right now");
+    throw new Error("the key server isn't running yet. deploy worker/keys-worker.js to Cloudflare (steps are in worker/README.md). last problem: " + last);
   };
   const device = (() => { let d = LS.get("nexvelo.device", ""); if (!d) { d = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now()); LS.set("nexvelo.device", d); } return d; })();
   const left = (ms, life) => {
@@ -34,7 +33,14 @@
     return (d ? d + "d " : "") + (d || h ? h + "h " : "") + (m % 60) + "m";
   };
 
-  document.head.appendChild(Object.assign(document.createElement("style"), { textContent: "body.nv-adfree [data-nv-ad]{display:none!important}#adkey-box .fld{margin-bottom:.75rem}#sec-admin .row{margin-bottom:.75rem}#ak-custom{display:flex;gap:.5rem;flex-wrap:wrap}#ak-custom input{width:5.5rem}" }));
+  document.head.appendChild(Object.assign(document.createElement("style"), { textContent: "body.nv-adfree [data-nv-ad]{display:none!important}#adkey-box .fld{margin-bottom:.75rem}#sec-admin .row{margin-bottom:.75rem}#ak-custom{display:flex;gap:.5rem;flex-wrap:wrap}#ak-custom input{width:5.5rem}" +
+    "#ak-lock.ak-gate{display:flex;flex-direction:column;align-items:center;text-align:center;gap:.5rem;padding:2rem 1rem 2.5rem;margin:0 auto;max-width:26rem}.ak-gate p{margin:0 0 .75rem!important}.ak-gate>b{font-size:1.125rem;font-weight:500}" +
+    ".ak-badge{width:3.5rem;height:3.5rem;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:var(--accent-fg);margin-bottom:.25rem}.ak-badge svg{width:1.5rem;height:1.5rem;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}" +
+    ".ak-pill{display:flex;align-items:center;gap:.25rem;width:100%;padding:.375rem .375rem .375rem 1.25rem;border-radius:999px;background:var(--btn);transition:box-shadow .15s}.ak-pill:focus-within{box-shadow:0 0 0 2px var(--accent)}" +
+    ".ak-pill input{flex:1;min-width:0;height:2.5rem;border:0;outline:0;background:none;color:var(--fg);font:inherit;font-size:1.25rem;letter-spacing:.4em;text-align:center}.ak-pill input[type=text]{letter-spacing:.3em}" +
+    ".ak-pill button{height:2.5rem;border:0;border-radius:999px;color:var(--dim);font:inherit;font-size:.75rem;padding:0 .75rem;cursor:pointer;background:none}.ak-pill button:hover{color:var(--fg)}" +
+    ".ak-pill #ak-unlock{width:2.75rem;padding:0;display:grid;place-items:center;background:var(--accent);color:var(--accent-fg)}.ak-pill #ak-unlock:hover{filter:brightness(.9);color:var(--accent-fg)}.ak-pill #ak-unlock svg{width:1.125rem;height:1.125rem;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}" +
+    "#ak-lockmsg{min-height:1.25rem;font-size:.8125rem;color:var(--dim)}#ak-pill.shake{animation:ak-shake .4s}@keyframes ak-shake{20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}@media (prefers-reduced-motion:reduce){#ak-pill.shake{animation:none}}" }));
 
   /* ---------- the person's key ---------- */
   let st = null; try { st = JSON.parse(LS.get("nexvelo.adkey", "null")); } catch {}
@@ -89,7 +95,8 @@
     about ? about.before(b) : nav.appendChild(b);
     const s = document.createElement("div"); s.className = "sec"; s.id = "sec-admin";
     s.innerHTML = `<h2>admin panel</h2>
-<div id="ak-lock"><p>enter the admin code to make and manage ad-free keys.</p><label class="fld"><span>admin code</span><input type="password" id="ak-code" autocomplete="off" inputmode="numeric" maxlength="32"></label><div class="row"><button class="btn primary" id="ak-unlock" type="button">unlock</button></div><div id="ak-lockmsg" style="font-size:.8125rem;color:var(--dim)"></div></div>
+<div id="ak-lock" class="ak-gate"><div class="ak-badge"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></div><b>admin access</b><p>enter the admin code to make and manage ad-free keys.</p>
+<div class="ak-pill" id="ak-pill"><input type="password" id="ak-code" placeholder="••••••" aria-label="Admin code" autocomplete="off" inputmode="numeric" maxlength="32"><button type="button" id="ak-eye" aria-label="Show the code" title="Show or hide">show</button><button type="button" id="ak-unlock" aria-label="Unlock"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></div><div id="ak-lockmsg" role="status"></div></div>
 <div id="ak-panel" hidden><p>make ad-free keys and see who is using them. a key's time starts when someone first enters it.</p>
 <h3>make keys</h3>
 <div class="row"><label class="fld" style="margin:0"><span>how long it lasts</span><select id="ak-len"><option value="life">lifetime</option><option value="365">1 year</option><option value="183">6 months</option><option value="30" selected>1 month</option><option value="custom">custom</option></select></label>
@@ -102,8 +109,9 @@
       const code = $("#ak-code", s).value.trim(), msg = $("#ak-lockmsg", s); if (!code) return;
       msg.textContent = "checking…";
       try { const d = await post("/api/admin/login", { code }); admin = { token: d.token, exp: Date.now() + d.expiresIn - 60000 }; LS.set(TK, JSON.stringify(admin)); $("#ak-code", s).value = ""; msg.textContent = ""; showState(); startPanel(); }
-      catch (e) { msg.textContent = e.message; }
+      catch (e) { msg.textContent = e.message; const pill = $("#ak-pill", s); pill.classList.remove("shake"); void pill.offsetWidth; pill.classList.add("shake"); }
     };
+    $("#ak-eye", s).addEventListener("click", () => { const i = $("#ak-code", s), show = i.type === "password"; i.type = show ? "text" : "password"; $("#ak-eye", s).textContent = show ? "hide" : "show"; i.focus(); });
     $("#ak-unlock", s).addEventListener("click", unlockNow);
     $("#ak-code", s).addEventListener("keydown", (e) => { if (e.key === "Enter") unlockNow(); });
     $("#ak-len", s).addEventListener("change", (e) => { $("#ak-custom", s).hidden = e.target.value !== "custom"; });
