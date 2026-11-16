@@ -191,6 +191,16 @@ c.put(SETTINGS_KEY, new Response(JSON.stringify({ enabled: adblockEnabled })))
 
 });
 
+/* ---------- Tell the page when the Wisp tunnel can't connect ---------- */
+let lastWisp = 0;
+async function tellWispFailed() {
+  if (Date.now() - lastWisp < 15000) return;
+  lastWisp = Date.now();
+  const cs = await self.clients.matchAll({ includeUncontrolled: true, type: "window" });
+  cs.forEach((c) => c.postMessage({ nvWispFailed: true }));
+}
+const WISP_ERR = /error code (7|28|35|52|56)\b|could not connect|connection (closed|failed|refused)|wisp|websocket/i;
+
 /* ---------- Fetch ---------- */
 
 async function handleRequest(event) {
@@ -245,9 +255,19 @@ return emptyResponse(event.request.destination);
 
 try {
 
-return await scramjet.fetch(event);
+const resp = await scramjet.fetch(event);
+
+if (resp.status >= 400 && /text|html/i.test(resp.headers.get("content-type") || "")) {
+
+resp.clone().text().then((t) => { if (WISP_ERR.test(t.slice(0, 4000))) tellWispFailed(); }).catch(() => {});
+
+}
+
+return resp;
 
 } catch (err) {
+
+if (WISP_ERR.test(String((err && (err.message || err)) || ""))) tellWispFailed();
 
 // Show the real error inside the page instead of a blank frame
 
