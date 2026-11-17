@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node scripts/copy-assets.js",
+    "build": "node scripts/copy-assets.js && node scripts/stage-dist.js",
     "start": "node scripts/copy-assets.js && node server.js"
   },
   "dependencies": {
@@ -13,7 +13,21 @@
     "@mercuryworkshop/libcurl-transport": "1.4.0",
     "@mercuryworkshop/scramjet": "1.1.0",
     "@mercuryworkshop/wisp-js": "latest",
+    "@prisma/composer": "0.38.0",
+    "@prisma/composer-prisma-cloud": "0.38.0",
+    "@prisma/orm-postgres": "8.0.0-rc.23",
+    "effect": "4.0.5",
     "fastify": "latest"
+  },
+  "devDependencies": {
+    "prisma": "8.0.0-rc.33"
+  },
+  "overrides": {
+    "effect": "4.0.5",
+    "@effect/vitest": "4.0.5",
+    "@effect/platform-bun": "4.0.5",
+    "@effect/platform-node": "4.0.5",
+    "@effect/platform-node-shared": "4.0.5"
   },
   "optionalDependencies": {
     "soundcloud.ts": "latest",

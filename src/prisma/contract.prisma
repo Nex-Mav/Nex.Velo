@@ -1,0 +1,4 @@
+// use prisma-8
+// Nex.Velo's data contract. The server keeps no data in a database — its
+// state is in memory and the static files in public/ — so the contract is
+// empty, and the baseline migration only establishes the marker.
