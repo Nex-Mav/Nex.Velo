@@ -1,0 +1,32 @@
+# Builds the website files and deploys the whole Nex.Velo Worker (site + API + keys + Wisp) to Cloudflare.
+# Uses the same two repository secrets as the other Cloudflare workflows: CLOUDFLARE_API_TOKEN ("Edit Cloudflare Workers") and CLOUDFLARE_ACCOUNT_ID.
+# First put your KV namespace id in worker-api/wrangler.toml.
+name: Deploy Nex.Velo Worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore: ["wisp-worker/**", "README.md", ".github/workflows/deploy-pages.yml"]
+
+concurrency:
+  group: cloudflare-worker
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install packages
+        run: npm install --no-audit --no-fund
+      - name: Copy the proxy files into public/
+        run: node scripts/copy-assets.js
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: worker-api
