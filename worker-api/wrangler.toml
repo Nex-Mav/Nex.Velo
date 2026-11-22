@@ -14,11 +14,12 @@ binding = "ASSETS"
 [ai]
 binding = "AI"
 
-# Ad-free keys. Use the SAME namespace id as worker/wrangler.toml so keys made in either place are the same keys.
-# Dashboard: Storage & Databases > KV > Create, then paste the id.
-[[kv_namespaces]]
-binding = "KEYS"
-id = "PASTE_YOUR_KV_NAMESPACE_ID_HERE"
+# Ad-free keys (optional, add this later): create a KV namespace (dashboard: Storage & Databases > KV > Create),
+# paste its id below and remove the leading # from the three lines. Use the SAME namespace as worker/wrangler.toml so keys match.
+# Until then the site, API, AI and Wisp all work; only the ad-free key tools do not.
+# [[kv_namespaces]]
+# binding = "KEYS"
+# id = "PASTE_YOUR_KV_NAMESPACE_ID_HERE"
 
 # "Visitors online" counter
 [[durable_objects.bindings]]
