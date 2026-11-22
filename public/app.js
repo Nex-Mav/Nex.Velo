@@ -10,7 +10,7 @@ const LS = {
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
   del: (k) => { try { localStorage.removeItem(k); } catch {} },
 };
-const VERSION = "1.00.0";
+const VERSION = "1.02.5";
 
 // Installing Nex.Velo as an app (the browser offers this when the site qualifies)
 const INSTALL = { evt: null };
@@ -51,7 +51,8 @@ const apiReady = (async () => {
 window.fetch = (u, o) => (typeof u === "string" && u.startsWith("/api/") ? apiReady.then(() => _fetch(API + u, o)) : _fetch(u, o));
 
 /* ================= Settings ================= */
-const defaultWisp = "wss://nex-velo.up.railway.app/wisp/"; // the Nex.Velo server, always available as the default
+const defaultWisp = "wss://nex-velo-wisp.nexero.workers.dev/wisp/"; // the Nex.Velo Wisp server (Cloudflare Worker), always available as the default
+const railwayWisp = "wss://nex-velo.up.railway.app/wisp/"; // the old default: kept as an automatic fallback
 // Choices made in the setup with "remember" turned off live in sessionStorage only. They travel into a cloaked tab as ?nvs=…
 try {
   const q = new URLSearchParams(location.search), v = q.get("nvs");
@@ -76,6 +77,7 @@ if (LS.get("nexvelo.settings") == null) { // carry over values saved by the firs
   if (e) settings.engine = e;
   if (a != null) settings.adblock = a === "1";
 }
+if (settings.wisp === railwayWisp) settings.wisp = defaultWisp; // anyone still on the old default moves to the Cloudflare server
 const PANIC_SITES = {
   classroom: "https://classroom.google.com", docs: "https://docs.google.com", drive: "https://drive.google.com", gmail: "https://mail.google.com",
   canvas: "https://canvas.instructure.com", schoology: "https://app.schoology.com", khan: "https://www.khanacademy.org",
@@ -152,7 +154,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 async function pickWisp() {
   if (settings.wispAuto === false) return;
   const sameHost = (location.protocol === "https:" ? "wss" : "ws") + "://" + location.host + "/wisp/";
-  const list = [...new Set([settings.wisp, defaultWisp, sameHost])];
+  const list = [...new Set([settings.wisp, defaultWisp, railwayWisp, sameHost])];
   for (let round = 0; round < 3 && !wispOk; round++) {
     for (const u of list) {
       if (wispOk) return;
@@ -1051,7 +1053,7 @@ $("#tour-btn").addEventListener("click", startTour);
 
 /* ================= Boot ================= */
 const NV = window.NV = {
-  settings, save, esc, toast, spring, openSettings, openPage, openUrl: (u) => newTab({ url: u }), LS, defaultWisp, VERSION, api: (p) => API + p, testWisp, normalizeWisp,
+  settings, save, esc, toast, spring, openSettings, openPage, openUrl: (u) => newTab({ url: u }), LS, defaultWisp, railwayWisp, VERSION, api: (p) => API + p, testWisp, normalizeWisp,
   proxyFrame: async (url) => { await ready; const f = scramjet.createFrame(); f.go(url); return f.frame; },
   setWisp: async (url) => { settings.wisp = url; activeWisp = url; save(); $("#wisp-url").value = url; await applyTransport(); },
   activeWisp: () => activeWisp, loaded: {}, rawFetch: _fetch, apiBase: () => API || location.origin,
