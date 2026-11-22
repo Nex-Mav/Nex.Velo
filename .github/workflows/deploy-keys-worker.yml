@@ -1,4 +1,4 @@
-# Deploys worker/keys-worker.js to Cloudflare whenever it changes (or from the Actions tab).
+# Deploys worker/key-worker.js to Cloudflare whenever it changes (or from the Actions tab).
 # Add two repository secrets first: CLOUDFLARE_API_TOKEN (a token with "Edit Cloudflare Workers" permission) and CLOUDFLARE_ACCOUNT_ID.
 name: Deploy key server
 
