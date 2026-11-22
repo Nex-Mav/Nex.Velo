@@ -1,0 +1,11 @@
+# Cloudflare Worker for the Nex.Velo Wisp server.
+# Live at wss://nex-velo-wisp.<your-workers-subdomain>.workers.dev/wisp/
+# (the site expects nex-velo-wisp.nexero.workers.dev; if your subdomain differs, change defaultWisp in public/app.js and the fallback in public/wallpapers.js)
+name = "nex-velo-wisp"
+main = "index.js"
+compatibility_date = "2025-01-01"
+workers_dev = true
+
+# Optional: only let your own sites use this server. Leave it out to allow any site.
+# [vars]
+# ALLOWED_ORIGINS = "https://nex-velo.pages.dev,https://nex-velo.vercel.app,https://nex-velo.up.railway.app"
