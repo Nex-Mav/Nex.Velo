@@ -4,16 +4,17 @@
 (() => {
   "use strict";
   const { esc, toast, LS, settings, defaultWisp, testWisp, normalizeWisp } = window.NV;
+  const RAILWAY_WISP = window.NV.railwayWisp || "wss://nex-velo.up.railway.app/wisp/";
   const $ = (s, r = document) => r.querySelector(s);
   const BACKUP_WISP = "wss://holywisp.fracit.al/";
   const API_MAIN = "https://nex-velo.up.railway.app", API_BACKUP = "https://railway2.up.railway.app";
   let list = []; try { list = JSON.parse(LS.get("nexvelo.servers", "[]")) || []; } catch {}
-  list = list.filter((u) => u !== BACKUP_WISP);
+  list = list.filter((u) => u !== BACKUP_WISP && u !== RAILWAY_WISP);
   const speed = {};   // url -> text
   const ms = {};      // url -> number
   const persist = () => LS.set("nexvelo.servers", JSON.stringify(list));
-  const all = () => [{ url: defaultWisp, label: "Nex.Velo server (default)" }, { url: BACKUP_WISP, label: "Backup server (holywisp)" }, ...list.map((u) => ({ url: u, label: u }))];
-  const builtIn = (u) => u === defaultWisp || u === BACKUP_WISP;
+  const all = () => [{ url: defaultWisp, label: "Nex.Velo server (Cloudflare, default)" }, { url: RAILWAY_WISP, label: "Nex.Velo server (Railway, backup)" }, { url: BACKUP_WISP, label: "Backup server (holywisp)" }, ...list.map((u) => ({ url: u, label: u }))];
+  const builtIn = (u) => u === defaultWisp || u === RAILWAY_WISP || u === BACKUP_WISP;
 
   // The old test only checked that the connection opens. This one asks the server to open a real connection to a website
   // (the Wisp protocol: a CONNECT packet, then some data) and waits for the answer, so a server that is up but can't reach the internet is caught.
@@ -87,12 +88,12 @@
   render();   // fill the list in Settings and on the servers page
 
   /* ----- automatic switch to a Wisp server that works ----- */
-  // When the server in use can't reach the internet, the first one that can is used (Nex.Velo's, the backup, then your saved ones).
+  // When the server in use can't reach the internet, the first one that can is used (Nex.Velo's Cloudflare server, the Railway one, the backup, then your saved ones).
   // The server you chose is remembered, and it is checked again every round. When it works again, it is used again.
   const HOME_KEY = "nexvelo.wisp-home", AWAY_KEY = "nexvelo.wisp-away";
   let checking = false;
   async function pickWorking(exclude) {
-    for (const u of [...new Set([settings.wisp, defaultWisp, BACKUP_WISP, ...list])]) if (u && u !== exclude && (await deepWisp(u, 8000)).ok) return u;
+    for (const u of [...new Set([settings.wisp, defaultWisp, RAILWAY_WISP, BACKUP_WISP, ...list])]) if (u && u !== exclude && (await deepWisp(u, 8000)).ok) return u;
     return null;
   }
   async function watch(force) {
