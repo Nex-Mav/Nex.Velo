@@ -136,7 +136,7 @@
       });
       if (!r.ok) {
         let d = {}; try { d = await r.json(); } catch {}
-        if (r.status === 404) throw new Error("the ai needs the Nex.Velo server (the Railway site), not a static host.");
+        if (r.status === 404) throw new Error("the ai needs the Nex.Velo server, not a static host.");
         if ([502, 503, 504].includes(r.status) && !d.error) throw new Error("the Nex.Velo server didn't answer (HTTP " + r.status + "). it may be restarting, or Nex.AI's model may have run out of memory. wait a minute and try again. if it keeps happening, open Settings and run the full check.");
         if (d.error === "vision_unavailable") throw new Error("nex.ai can't look at images or screens yet. ask again with just text.");
         throw new Error(prettyErr(d.error || "") || "nex.ai returned an error (" + r.status + ")");
@@ -164,7 +164,7 @@
     } catch (e) {
       const net = e instanceof TypeError || /failed to fetch|networkerror|load failed/i.test(e.message || "");
       const msg = e.name === "AbortError" ? "nex.ai stopped answering (the server may be restarting). wait a moment and try again."
-        : net ? "couldn't reach the Nex.Velo server. if this site is on Vercel, the api needs the newest files (the api folder and lib folder) deployed, or the Railway server running."
+        : net ? "couldn't reach the Nex.Velo server. check that its Cloudflare Worker is deployed and running."
         : e.message || "something went wrong";
       reply.content = (reply.content ? reply.content + "\n\n" : "") + "⚠️ " + msg;
     }
