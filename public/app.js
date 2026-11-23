@@ -10,7 +10,7 @@ const LS = {
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
   del: (k) => { try { localStorage.removeItem(k); } catch {} },
 };
-const VERSION = "1.02.7";
+const VERSION = "1.02.8";
 
 // Installing Nex.Velo as an app (the browser offers this when the site qualifies)
 const INSTALL = { evt: null };
