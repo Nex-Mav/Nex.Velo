@@ -1,0 +1,23 @@
+# Nex.Velo on Cloudflare. One Worker: server.js is the server, public/ is the website.
+# In Cloudflare: Workers & Pages > nex-velo > Settings > Builds
+#   Build command:  npm install && npm run build
+#   Deploy command: npx wrangler deploy
+name = "nex-velo"
+main = "server.js"
+compatibility_date = "2025-06-01"
+workers_dev = true
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+# these files are loaded by other sites too, so server.js adds the headers that allow it
+run_worker_first = ["/scram/*", "/libcurl/*", "/baremux/*", "/uv/*", "/v86/*", "/vm/*", "/logo.png", "/favicon.png"]
+
+# Nex.AI runs on Cloudflare Workers AI (no key needed)
+[ai]
+binding = "AI"
+
+# Ad-free keys (optional, add later): create a KV namespace (Storage & Databases > KV), paste its id, remove the # from these 3 lines.
+# [[kv_namespaces]]
+# binding = "KEYS"
+# id = "PASTE_YOUR_KV_NAMESPACE_ID_HERE"
