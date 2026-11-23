@@ -1,20 +1,18 @@
 /* Servers (inside Settings): keep a list of Wisp servers, test their speed, pick one, or let it pick the fastest.
    Built in: a backup Wisp server (holywisp) that takes over by itself when yours stops answering,
-   and a backup API server (railway2) that is tried when nex-velo.up.railway.app doesn't answer. */
+   and the Cloudflare API server, tried when this site's own server doesn't answer. */
 (() => {
   "use strict";
   const { esc, toast, LS, settings, defaultWisp, testWisp, normalizeWisp } = window.NV;
-  const RAILWAY_WISP = window.NV.railwayWisp || "wss://nex-velo.up.railway.app/wisp/";
   const $ = (s, r = document) => r.querySelector(s);
   const BACKUP_WISP = "wss://holywisp.fracit.al/";
-  const API_MAIN = "https://nex-velo.up.railway.app", API_BACKUP = "https://railway2.up.railway.app";
   let list = []; try { list = JSON.parse(LS.get("nexvelo.servers", "[]")) || []; } catch {}
-  list = list.filter((u) => u !== BACKUP_WISP && u !== RAILWAY_WISP);
+  list = list.filter((u) => u !== BACKUP_WISP && !/railway\.app/i.test(u)); // saved Railway servers are dropped
   const speed = {};   // url -> text
   const ms = {};      // url -> number
   const persist = () => LS.set("nexvelo.servers", JSON.stringify(list));
-  const all = () => [{ url: defaultWisp, label: "Nex.Velo server (Cloudflare, default)" }, { url: RAILWAY_WISP, label: "Nex.Velo server (Railway, backup)" }, { url: BACKUP_WISP, label: "Backup server (holywisp)" }, ...list.map((u) => ({ url: u, label: u }))];
-  const builtIn = (u) => u === defaultWisp || u === RAILWAY_WISP || u === BACKUP_WISP;
+  const all = () => [{ url: defaultWisp, label: "Nex.Velo server (Cloudflare, default)" }, { url: BACKUP_WISP, label: "Backup server (holywisp)" }, ...list.map((u) => ({ url: u, label: u }))];
+  const builtIn = (u) => u === defaultWisp || u === BACKUP_WISP;
 
   // The old test only checked that the connection opens. This one asks the server to open a real connection to a website
   // (the Wisp protocol: a CONNECT packet, then some data) and waits for the answer, so a server that is up but can't reach the internet is caught.
@@ -88,12 +86,12 @@
   render();   // fill the list in Settings and on the servers page
 
   /* ----- automatic switch to a Wisp server that works ----- */
-  // When the server in use can't reach the internet, the first one that can is used (Nex.Velo's Cloudflare server, the Railway one, the backup, then your saved ones).
+  // When the server in use can't reach the internet, the first one that can is used (Nex.Velo's Cloudflare server, the backup, then your saved ones).
   // The server you chose is remembered, and it is checked again every round. When it works again, it is used again.
   const HOME_KEY = "nexvelo.wisp-home", AWAY_KEY = "nexvelo.wisp-away";
   let checking = false;
   async function pickWorking(exclude) {
-    for (const u of [...new Set([settings.wisp, defaultWisp, RAILWAY_WISP, BACKUP_WISP, ...list])]) if (u && u !== exclude && (await deepWisp(u, 8000)).ok) return u;
+    for (const u of [...new Set([settings.wisp, defaultWisp, BACKUP_WISP, ...list])]) if (u && u !== exclude && (await deepWisp(u, 8000)).ok) return u;
     return null;
   }
   async function watch(force) {
@@ -139,21 +137,22 @@
     return tracks;
   }
 
-  /* ----- backup API server: if nex-velo.up.railway.app can't be reached, the same request goes to railway2 ----- */
+  /* ----- backup API servers: if the API server in use doesn't answer, the same request goes to the others ----- */
   const prevFetch = window.fetch.bind(window);
-  // order of API servers: nex-velo.up.railway.app (or this site's own server) first, then nex-velo.nexero.workers.dev, then railway2
-  const API_BACKUPS = ["https://nex-velo.nexero.workers.dev", API_BACKUP];
+  // API servers: this site's own server, then the Cloudflare one (nex-velo.nexero.workers.dev)
+  const API_CF = "https://nex-velo.nexero.workers.dev";
+  const API_BASES = [API_CF];
   let mainDownUntil = 0;
   window.fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input && input.url;
-    const m = typeof url === "string" && url.match(/^(?:https:\/\/nex-velo\.up\.railway\.app)?(\/api\/[^#]*)$/);
+    const m = typeof url === "string" && url.match(/^(https:\/\/(?:nex-velo\.nexero\.workers\.dev))?(\/api\/[^#]*)$/);
     const method = String((init && init.method) || (input && input.method) || "GET").toUpperCase();
-    if (m && method === "GET" && /^\/api\/music\/recommended(\?|$)/.test(m[1])) {
+    if (m && method === "GET" && /^\/api\/music\/recommended(\?|$)/.test(m[2])) {
       try { const tracks = await rotatingRecommended(); if (tracks) return new Response(JSON.stringify({ tracks }), { headers: { "content-type": "application/json" } }); } catch {}
     }
     if (!m || method !== "GET") return prevFetch(input, init);
-    const path = m[1], bad = (r) => r.status >= 502 && r.status <= 504;
-    const tries = [() => prevFetch(input, init), ...API_BACKUPS.map((b) => () => prevFetch(b + path, init))];
+    const used = m[1] || location.origin, path = m[2], bad = (r) => r.status >= 502 && r.status <= 504;
+    const tries = [() => prevFetch(input, init), ...API_BASES.filter((b) => b !== used && b !== location.origin).map((b) => () => prevFetch(b + path, init))];
     const mainFirst = Date.now() >= mainDownUntil;
     if (!mainFirst) tries.push(tries.shift()); // the main server failed a moment ago, so the backups go first
     let lastRes = null, lastErr = null;
@@ -164,7 +163,5 @@
     if (lastRes) return lastRes;
     throw lastErr;
   };
-  window.NV.apiBackup = API_BACKUP;
-  void API_MAIN;
   window.NV.loaded.servers = true;
 })();
