@@ -1916,7 +1916,7 @@ const M_api = (() => {
         try { const info = await withTimeout(fn(), limit); return { ok: true, ms: Date.now() - s, info }; }
         catch (e) { return { ok: false, ms: Date.now() - s, error: String(e?.message || e).slice(0, 700) }; }
       };
-      const names = ["youtubeSearch", "youtubeAudio", "soundcloudSearch", "soundcloudAudio", "audiusSearch", "audiusAudio", "gnMath", "obsidian", "ugs", "movies", "workersAI", "wikipedia", "gnFile", "obsidianFile", "ugsFile", "keysStorage", "liveCounter", "wispOutbound"];
+      const names = ["youtubeSearch", "youtubeAudio", "soundcloudSearch", "soundcloudAudio", "audiusSearch", "audiusAudio", "gnMath", "obsidian", "ugs", "movies", "workersAI", "wikipedia", "gnFile", "obsidianFile", "ugsFile", "keysStorage", "liveCounter", "wispOutbound", "proxyFiles"];
       // picks a couple of real games from a list and asks the source whether their files exist
       const fileProbe = async (listFn) => {
         const games = await listFn();
@@ -1960,6 +1960,14 @@ const M_api = (() => {
         t(async () => { if (!ENV.KEYS) throw new Error("the KEYS storage is not connected (ad-free keys need it)"); await ENV.KEYS.get("k:diag"); return "connected"; }),
         t(async () => { if (!ENV.LIVE) throw new Error("the LIVE Durable Object is not connected (the visitor count is then only a rough guess)"); return "count " + (await liveCall("/count")).count; }),
         t(async () => { const r = await M_wisp.tcpTest("google.com", 80); if (!r.ok) throw new Error("the Wisp server can't open connections to the internet: " + r.error); return "opened a connection to google.com in " + r.ms + " ms (" + r.reply + ")"; }),
+        t(async () => { // the proxy's own files are made by the build step (npm run build); without them every proxied page stays white
+          if (!ENV.ASSETS) throw new Error("the website files are not attached to this Worker");
+          const need = ["/sw.js", "/scram/scramjet.all.js", "/scram/scramjet.wasm.wasm", "/scram/scramjet.sync.js", "/baremux/index.js", "/baremux/worker.js", "/libcurl/index.mjs"];
+          const missing = [];
+          for (const p of need) { const r = await ENV.ASSETS.fetch("https://assets.local" + p); try { r.body && r.body.cancel(); } catch {} if (!r.ok) missing.push(p + " (" + r.status + ")"); }
+          if (missing.length) throw new Error("missing on this server: " + missing.join(", ") + ". The build step (npm run build) did not run, or it failed.");
+          return "all " + need.length + " proxy files are there";
+        }),
       ];
       const done = await Promise.all(jobs);
       const checks = {}; names.forEach((n, i) => { checks[n] = done[i]; });
