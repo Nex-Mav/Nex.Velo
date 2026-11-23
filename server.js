@@ -371,9 +371,8 @@ const M_wisp = (() => {
       ended = true;
     }
 
-    ws.addEventListener("message", (ev) => {
-      if (typeof ev.data === "string") return;
-      const buf = ev.data;
+    let queue = Promise.resolve();
+    const handle = (buf) => {
       if (!(buf instanceof ArrayBuffer) || buf.byteLength < 5) return;
       const bytes = new Uint8Array(buf);
       const id = new DataView(buf).getUint32(1, true);
@@ -384,6 +383,13 @@ const M_wisp = (() => {
         case T_CLOSE: closeStream(id, R_VOLUNTARY, false); break;
         default: break; // INFO and anything newer is ignored: this server speaks Wisp v1
       }
+    };
+    ws.addEventListener("message", (ev) => {
+      const d = ev.data;
+      if (typeof d === "string") return;
+      if (d instanceof ArrayBuffer) return handle(d);
+      if (ArrayBuffer.isView(d)) return handle(d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength));
+      if (d && typeof d.arrayBuffer === "function") queue = queue.then(() => d.arrayBuffer()).then(handle).catch(() => {}); // a Blob: read it, still in order
     });
     ws.addEventListener("close", shutdown);
     ws.addEventListener("error", shutdown);
@@ -1527,6 +1533,8 @@ const M_api = (() => {
       gnhtml: (p) => `https://cdn.jsdelivr.net/gh/gn-math/html@main/${encPath(p)}`,
       gnassets: (p) => `https://cdn.jsdelivr.net/gh/gn-math/assets@main/${encPath(p)}`,
       gncovers: (p) => `https://cdn.jsdelivr.net/gh/gn-math/covers@main/${encPath(p)}`,
+      ugs: (p) => `https://cdn.jsdelivr.net/gh/${UGS.owner}/${UGS.repo}@${UGS.branch}/${encPath(p)}`,
+      obsidian: (p) => `https://cdn.jsdelivr.net/gh/${OBS.owner}/${OBS.repo}@${OBS.branch}/${encPath(p)}`,
     };
     const htmlEsc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
     const fileErr = (reply, code, lib, p, why) => {
@@ -1615,13 +1623,19 @@ const M_api = (() => {
           return r.json();
         };
         let files = [], why = "";
-        try {
+        try { // first way: jsDelivr lists the repository's files (GitHub's own API refuses most requests that come from Cloudflare)
+          const jr = await withTimeout(fetch(`https://data.jsdelivr.com/v1/packages/gh/${UGS.owner}/${UGS.repo}@${UGS.branch}?structure=flat`, { headers: { "user-agent": UA } }), 25000);
+          if (!jr.ok) throw new Error("jsDelivr answered " + jr.status);
+          files = ((await jr.json()).files || []).map((f) => String(f.name || "")).filter((n) => /^\/UGS-Files\/[^/]+\.html?$/i.test(n)).map((n) => n.slice(11));
+          if (!files.length) throw new Error("jsDelivr found no UGS-Files");
+        } catch (e) { why = String(e?.message || e); }
+        if (!files.length) try { // second way: GitHub's API (add a GITHUB_TOKEN to the Worker to avoid the rate limit)
           const root = await gh("git/trees/" + UGS.branch);
           const dir = (root.tree || []).find((x) => x.path === "UGS-Files" && x.type === "tree");
           if (!dir) throw new Error("the repository has no UGS-Files folder");
           files = ((await gh("git/trees/" + dir.sha)).tree || []).filter((x) => x.type === "blob" && /\.html?$/i.test(x.path)).map((x) => x.path);
-        } catch (e) { why = String(e?.message || e); }
-        if (!files.length) { // second way: the repository keeps its own list of names in games.js
+        } catch (e) { why += " / " + String(e?.message || e); }
+        if (!files.length) { // third way: the repository keeps its own list of names in games.js
           try {
             const txt = await (await withTimeout(fetch(LIB_RAW.ugs("games.js"), { headers: { "user-agent": UA } }), 20000)).text();
             files = [...new Set([...txt.matchAll(/["'](cl[A-Za-z0-9_-]+)["']/g)].map((m) => m[1] + ".html"))];
