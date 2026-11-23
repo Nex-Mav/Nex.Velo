@@ -349,7 +349,8 @@ const M_wisp = (() => {
             for (let i = 0; i < value.length; i += 65536) send(packet(T_DATA, id, value.subarray(i, i + 65536)));
           }
           closeStream(id, R_VOLUNTARY, true);
-        } catch {
+        } catch (e) {
+          console.warn("[wisp] " + host + ":" + port + " " + (s.opened ? "dropped" : "could not connect") + ": " + String((e && e.message) || e));
           closeStream(id, s.opened ? R_NETWORK : R_UNREACHABLE, true);
         }
       })();
@@ -398,8 +399,34 @@ const M_wisp = (() => {
     send(packet(T_CONTINUE, 0, u32(BUFFER)));
   }
 
-  function handleWisp(request, env) {
+  // Opens one real connection from this Worker and asks for a web page. Used by /api/diag and by /wisp/?test=google.com
+  async function tcpTest(host, port) {
+    const t0 = Date.now();
+    const limit = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("no answer after " + ms / 1000 + " seconds")), ms))]);
+    try {
+      if (blockedHost(host) || BLOCKED_PORTS.has(port)) throw new Error("that address is blocked");
+      const socket = connect({ hostname: host, port }, { secureTransport: "off", allowHalfOpen: false });
+      await limit(socket.opened, 8000);
+      const w = socket.writable.getWriter();
+      await w.write(new TextEncoder().encode("GET / HTTP/1.0\r\nHost: " + host + "\r\nConnection: close\r\n\r\n"));
+      w.releaseLock();
+      const r = socket.readable.getReader();
+      const { value } = await limit(r.read(), 8000);
+      try { socket.close(); } catch {}
+      return { ok: true, host, port, ms: Date.now() - t0, reply: new TextDecoder().decode((value || new Uint8Array(0)).subarray(0, 40)).split("\r\n")[0] };
+    } catch (e) {
+      return { ok: false, host, port, ms: Date.now() - t0, error: String((e && e.message) || e) };
+    }
+  }
+
+  async function handleWisp(request, env) {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+
+    const testHost = new URL(request.url).searchParams.get("test");
+    if (testHost && (request.headers.get("upgrade") || "").toLowerCase() !== "websocket") {
+      const port = Number(new URL(request.url).searchParams.get("port")) || 80;
+      return new Response(JSON.stringify(await tcpTest(testHost.slice(0, 200), port), null, 2), { headers: { ...CORS, "content-type": "application/json", "cache-control": "no-store" } });
+    }
 
     if ((request.headers.get("upgrade") || "").toLowerCase() !== "websocket") {
       return new Response("Nex.Velo Wisp server (Cloudflare) is running.\nConnect to it with a WebSocket, e.g. wss://" + new URL(request.url).host + "/wisp/\n", {
@@ -415,7 +442,7 @@ const M_wisp = (() => {
     session(server);
     return new Response(null, { status: 101, webSocket: client });
   }
-  return { handleWisp };
+  return { handleWisp, tcpTest };
 })();
 
 /* ============ worker/key-worker.js ============ */
@@ -1889,7 +1916,7 @@ const M_api = (() => {
         try { const info = await withTimeout(fn(), limit); return { ok: true, ms: Date.now() - s, info }; }
         catch (e) { return { ok: false, ms: Date.now() - s, error: String(e?.message || e).slice(0, 700) }; }
       };
-      const names = ["youtubeSearch", "youtubeAudio", "soundcloudSearch", "soundcloudAudio", "audiusSearch", "audiusAudio", "gnMath", "obsidian", "ugs", "movies", "workersAI", "wikipedia", "gnFile", "obsidianFile", "ugsFile", "keysStorage", "liveCounter"];
+      const names = ["youtubeSearch", "youtubeAudio", "soundcloudSearch", "soundcloudAudio", "audiusSearch", "audiusAudio", "gnMath", "obsidian", "ugs", "movies", "workersAI", "wikipedia", "gnFile", "obsidianFile", "ugsFile", "keysStorage", "liveCounter", "wispOutbound"];
       // picks a couple of real games from a list and asks the source whether their files exist
       const fileProbe = async (listFn) => {
         const games = await listFn();
@@ -1932,6 +1959,7 @@ const M_api = (() => {
         t(() => fileProbe(ugsGames)),
         t(async () => { if (!ENV.KEYS) throw new Error("the KEYS storage is not connected (ad-free keys need it)"); await ENV.KEYS.get("k:diag"); return "connected"; }),
         t(async () => { if (!ENV.LIVE) throw new Error("the LIVE Durable Object is not connected (the visitor count is then only a rough guess)"); return "count " + (await liveCall("/count")).count; }),
+        t(async () => { const r = await M_wisp.tcpTest("google.com", 80); if (!r.ok) throw new Error("the Wisp server can't open connections to the internet: " + r.error); return "opened a connection to google.com in " + r.ms + " ms (" + r.reply + ")"; }),
       ];
       const done = await Promise.all(jobs);
       const checks = {}; names.forEach((n, i) => { checks[n] = done[i]; });
