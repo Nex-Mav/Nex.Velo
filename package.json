@@ -5,22 +5,18 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/copy-assets.js",
-    "start": "node scripts/copy-assets.js && node server.js"
+    "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
-    "@fastify/static": "latest",
     "@mercuryworkshop/bare-mux": "^2.1.0",
     "@mercuryworkshop/libcurl-transport": "1.4.0",
-    "@mercuryworkshop/scramjet": "1.1.0",
-    "@mercuryworkshop/wisp-js": "latest",
-    "fastify": "latest"
+    "@mercuryworkshop/scramjet": "1.1.0"
   },
   "optionalDependencies": {
-    "soundcloud.ts": "latest",
-    "ytmusic-api": "latest",
-    "@distube/ytdl-core": "latest",
-    "@huggingface/transformers": "^3.0.0",
     "@titaniumnetwork-dev/ultraviolet": "^3.2.7",
     "v86": "latest"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
   }
 }
