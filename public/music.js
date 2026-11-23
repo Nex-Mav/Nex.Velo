@@ -593,7 +593,7 @@ button.big:hover{background:#cfcfcf}
     renderResults("searching youtube music, soundcloud and audius…");
     try {
       const r = await fetch(api("/api/music/search?q=" + encodeURIComponent(q)));
-      if (r.status === 404) throw new Error("music search needs the Nex.Velo server (the Railway site), not a static host.");
+      if (r.status === 404) throw new Error("music search needs the Nex.Velo server, not a static host.");
       const data = await r.json();
       lastStatus = data.status; renderStatus();
       results = data.results || []; renderRec();
@@ -603,7 +603,7 @@ button.big:hover{background:#cfcfcf}
     } catch (err) {
       results = [];
       const net = err instanceof TypeError || /failed to fetch|networkerror|load failed/i.test(err.message || "");
-      renderResults(net ? "can't reach the music server. if this site is on Vercel, deploy the api and lib folders (or start the Railway server), then try again." : err.message || "search failed");
+      renderResults(net ? "can't reach the music server. check that the Nex.Velo Cloudflare Worker is deployed, then try again." : err.message || "search failed");
     }
   });
 
