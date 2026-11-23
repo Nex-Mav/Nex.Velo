@@ -159,7 +159,7 @@
     await loadScripts(A + "kaze.js", A + "controller.api.js");
     const api = window.$kazeController; if (!api) throw new Error("Kaze's controller did not load");
     let wisp = ""; try { wisp = JSON.parse(localStorage.getItem("nexvelo.settings") || "{}").wisp || ""; } catch {}
-    const transport = new api.WorkerTransport({ scripts: [A + "libcurl/index.js"], construct: "LibcurlTransport.LibcurlClient", options: { wisp: wisp || "wss://nex-velo-wisp.nexero.workers.dev/wisp/" } });
+    const transport = new api.WorkerTransport({ scripts: [A + "libcurl/index.js"], construct: "LibcurlTransport.LibcurlClient", options: { wisp: wisp || "wss://nex-velo.nexero.workers.dev/wisp/" } });
     api.warmupTransport(transport);
     const reg = await navigator.serviceWorker.register("/kaze-sw.js", { scope: "/~/kz/", updateViaCache: "none" });
     reg.update().catch(() => {});
