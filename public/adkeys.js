@@ -1,6 +1,6 @@
 /* Ad-free keys. People type a key (NXVL-0000-0000) into Settings > About to switch off the ads that Nex.Velo places itself.
    Settings > Admin Panel is where keys are made and watched. It asks for the admin code every time it is opened after the session ends.
-   Everything is checked on a key server (worker/keys-worker.js on Cloudflare, or lib/keys.js on Railway as a backup), never in this file.
+   Everything is checked on a key server (the keys part of server.js on Cloudflare), never in this file.
    Ads of ours should carry the attribute data-nv-ad. It is hidden while a key is active. Ad blocking for browsed pages is separate. */
 (() => {
   "use strict";
