@@ -10,7 +10,7 @@ const LS = {
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
   del: (k) => { try { localStorage.removeItem(k); } catch {} },
 };
-const VERSION = "1.03.1";
+const VERSION = "1.03.2";
 
 // Installing Nex.Velo as an app (the browser offers this when the site qualifies)
 const INSTALL = { evt: null };
@@ -33,11 +33,11 @@ try { navigator.storage && navigator.storage.persist && navigator.storage.persis
 const ICON_X = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 const ICON_EDIT = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4-1 11-11-3-3L5 16z"/></svg>';
 
-// The API (AI, music, lyrics...) lives on the Nex.Velo server. Ask this host first, then the Cloudflare server, then the Railway server.
+// The API (AI, music, lyrics...) lives on the Nex.Velo server. Ask this host first, then the Cloudflare server.
 const _fetch = window.fetch.bind(window);
 let API = "";
 const apiReady = (async () => {
-  if (/\.railway\.app$/i.test(location.hostname) || /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) return;
+  if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) return;
   const probe = async (base) => {
     try {
       const c = new AbortController(), t = setTimeout(() => c.abort(), 3500);
@@ -45,14 +45,13 @@ const apiReady = (async () => {
       return r.ok && !!(await r.json());
     } catch { return false; }
   };
-  for (const base of ["", "https://nex-velo.nexero.workers.dev", "https://nex-velo.up.railway.app"]) if (await probe(base)) { API = base; return; }
+  for (const base of ["", "https://nex-velo.nexero.workers.dev"]) if (await probe(base)) { API = base; return; }
   API = "https://nex-velo.nexero.workers.dev"; // nothing answered: keep the Cloudflare server as the default so the errors point at the right place
 })();
 window.fetch = (u, o) => (typeof u === "string" && u.startsWith("/api/") ? apiReady.then(() => _fetch(API + u, o)) : _fetch(u, o));
 
 /* ================= Settings ================= */
 const defaultWisp = "wss://nex-velo.nexero.workers.dev/wisp/"; // the Nex.Velo Wisp server (Cloudflare Worker), always available as the default
-const railwayWisp = "wss://nex-velo.up.railway.app/wisp/"; // the old default: kept as an automatic fallback
 // Choices made in the setup with "remember" turned off live in sessionStorage only. They travel into a cloaked tab as ?nvs=…
 try {
   const q = new URLSearchParams(location.search), v = q.get("nvs");
@@ -77,7 +76,7 @@ if (LS.get("nexvelo.settings") == null) { // carry over values saved by the firs
   if (e) settings.engine = e;
   if (a != null) settings.adblock = a === "1";
 }
-if (settings.wisp === railwayWisp) settings.wisp = defaultWisp; // anyone still on the old default moves to the Cloudflare server
+if (settings.wisp === "wss://nex-velo.up.railway.app/wisp/") settings.wisp = defaultWisp; // anyone still on the old Railway server moves to the Cloudflare one
 const PANIC_SITES = {
   classroom: "https://classroom.google.com", docs: "https://docs.google.com", drive: "https://drive.google.com", gmail: "https://mail.google.com",
   canvas: "https://canvas.instructure.com", schoology: "https://app.schoology.com", khan: "https://www.khanacademy.org",
@@ -154,7 +153,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 async function pickWisp() {
   if (settings.wispAuto === false) return;
   const sameHost = (location.protocol === "https:" ? "wss" : "ws") + "://" + location.host + "/wisp/";
-  const list = [...new Set([settings.wisp, defaultWisp, railwayWisp, sameHost])];
+  const list = [...new Set([settings.wisp, defaultWisp, sameHost])];
   for (let round = 0; round < 3 && !wispOk; round++) {
     for (const u of list) {
       if (wispOk) return;
@@ -1071,7 +1070,7 @@ $("#tour-btn").addEventListener("click", startTour);
 
 /* ================= Boot ================= */
 const NV = window.NV = {
-  settings, save, esc, toast, spring, openSettings, openPage, openUrl: (u) => newTab({ url: u }), LS, defaultWisp, railwayWisp, VERSION, api: (p) => API + p, testWisp, normalizeWisp,
+  settings, save, esc, toast, spring, openSettings, openPage, openUrl: (u) => newTab({ url: u }), LS, defaultWisp, VERSION, api: (p) => API + p, testWisp, normalizeWisp,
   proxyFrame: async (url) => { await ready; const f = scramjet.createFrame(); f.go(url); return f.frame; },
   setWisp: async (url) => { settings.wisp = url; activeWisp = url; save(); $("#wisp-url").value = url; await applyTransport(); },
   activeWisp: () => activeWisp, loaded: {}, rawFetch: _fetch, apiBase: () => API || location.origin,
