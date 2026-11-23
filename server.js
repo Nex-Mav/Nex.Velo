@@ -242,7 +242,7 @@ const M_wisp = (() => {
   //   - A Worker cannot open TCP connections to sites that are themselves behind Cloudflare. Those streams are closed as "unreachable".
   //   - No UDP.
   //   - Outbound port 25 is blocked.
-  // The site keeps the Railway server and HolyWisp as automatic fallbacks for exactly these cases.
+  // The site keeps HolyWisp as the automatic fallback for exactly these cases.
 
 
   const T_CONNECT = 0x01, T_DATA = 0x02, T_CONTINUE = 0x03, T_CLOSE = 0x04;
@@ -948,7 +948,7 @@ const M_movies = (() => {
 
 /* ============ lib/api-cf.js ============ */
 const M_api = (() => {
-  // All /api routes for Cloudflare Workers. Same routes as lib/api.js (which still runs on Railway/Vercel), rewritten for Workers:
+  // All /api routes for Cloudflare Workers. Rewritten for Workers:
   //   - no Node-only code (no child processes, files or Node streams): responses are web streams
   //   - settings come from the Worker's variables and secrets, not process.env
   //   - Nex.AI answers with Cloudflare Workers AI (the "AI" binding), with Groq as an optional extra
