@@ -10,7 +10,7 @@ const LS = {
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
   del: (k) => { try { localStorage.removeItem(k); } catch {} },
 };
-const VERSION = "1.02.5";
+const VERSION = "1.02.7";
 
 // Installing Nex.Velo as an app (the browser offers this when the site qualifies)
 const INSTALL = { evt: null };
@@ -33,7 +33,7 @@ try { navigator.storage && navigator.storage.persist && navigator.storage.persis
 const ICON_X = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 const ICON_EDIT = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4-1 11-11-3-3L5 16z"/></svg>';
 
-// The API (AI, music, lyrics...) lives on the Nex.Velo server. Ask this host first, then the Railway server.
+// The API (AI, music, lyrics...) lives on the Nex.Velo server. Ask this host first, then the Cloudflare server, then the Railway server.
 const _fetch = window.fetch.bind(window);
 let API = "";
 const apiReady = (async () => {
@@ -45,13 +45,13 @@ const apiReady = (async () => {
       return r.ok && !!(await r.json());
     } catch { return false; }
   };
-  for (const base of ["", "https://nex-velo.up.railway.app"]) if (await probe(base)) { API = base; return; }
-  API = "https://nex-velo.up.railway.app"; // nothing answered: keep the default so the errors point at the right place
+  for (const base of ["", "https://nex-velo.nexero.workers.dev", "https://nex-velo.up.railway.app"]) if (await probe(base)) { API = base; return; }
+  API = "https://nex-velo.nexero.workers.dev"; // nothing answered: keep the Cloudflare server as the default so the errors point at the right place
 })();
 window.fetch = (u, o) => (typeof u === "string" && u.startsWith("/api/") ? apiReady.then(() => _fetch(API + u, o)) : _fetch(u, o));
 
 /* ================= Settings ================= */
-const defaultWisp = "wss://nex-velo-wisp.nexero.workers.dev/wisp/"; // the Nex.Velo Wisp server (Cloudflare Worker), always available as the default
+const defaultWisp = "wss://nex-velo.nexero.workers.dev/wisp/"; // the Nex.Velo Wisp server (Cloudflare Worker), always available as the default
 const railwayWisp = "wss://nex-velo.up.railway.app/wisp/"; // the old default: kept as an automatic fallback
 // Choices made in the setup with "remember" turned off live in sessionStorage only. They travel into a cloaked tab as ?nvs=…
 try {
