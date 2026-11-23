@@ -10,7 +10,7 @@ const LS = {
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
   del: (k) => { try { localStorage.removeItem(k); } catch {} },
 };
-const VERSION = "1.02.8";
+const VERSION = "1.02.10";
 
 // Installing Nex.Velo as an app (the browser offers this when the site qualifies)
 const INSTALL = { evt: null };
@@ -771,12 +771,30 @@ const normalizeWisp = (v) => {
   if (!/^wss?:\/\//i.test(v)) v = "wss://" + v;
   return v.endsWith("/") ? v : v + "/";
 };
+// Opens the Wisp server for real: connects, asks it to open a connection to a plain website and checks the answer.
+// A server that opens but can't reach the internet counts as NOT working. One that stays silent still counts as working.
 function testWisp(url, ms = 6000) {
   return new Promise((resolve) => {
-    let done = false, ws;
-    const finish = (ok) => { if (!done) { done = true; try { ws.close(); } catch {} resolve(ok); } };
+    let done = false, ws, opened = false, asked = false, timer, cap;
+    const finish = (ok) => { if (!done) { done = true; clearTimeout(timer); clearTimeout(cap); try { ws.close(); } catch {} resolve(ok); } };
     try { ws = new WebSocket(url); } catch { return resolve(false); }
-    ws.onopen = () => finish(true); ws.onerror = () => finish(false); setTimeout(() => finish(false), ms);
+    ws.binaryType = "arraybuffer";
+    timer = setTimeout(() => finish(opened), ms);
+    ws.onopen = () => { opened = true; cap = setTimeout(() => finish(true), Math.min(ms, 2500)); };
+    ws.onerror = () => finish(false);
+    ws.onclose = () => finish(opened && !asked);
+    ws.onmessage = (e) => {
+      if (!(e.data instanceof ArrayBuffer) || e.data.byteLength < 5) return;
+      const b = new Uint8Array(e.data), id = new DataView(e.data).getUint32(1, true);
+      if (b[0] === 3 && id === 0 && !asked) { // the server is ready: ask it to reach a real website
+        asked = true;
+        const host = new TextEncoder().encode("google.com"), req = new TextEncoder().encode("GET / HTTP/1.0\r\nHost: google.com\r\n\r\n");
+        const c = new Uint8Array(8 + host.length); c[0] = 1; new DataView(c.buffer).setUint32(1, 1, true); c.set([1, 80, 0, ...host], 5);
+        const d = new Uint8Array(5 + req.length); d[0] = 2; new DataView(d.buffer).setUint32(1, 1, true); d.set(req, 5);
+        try { ws.send(c); ws.send(d); } catch { finish(false); }
+      } else if (id === 1 && b[0] === 2) finish(true); // a real answer came back
+      else if (id === 1 && b[0] === 4 && b[5] !== 2) finish(false); // the server couldn't open the connection
+    };
   });
 }
 
