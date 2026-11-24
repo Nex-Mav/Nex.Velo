@@ -442,7 +442,7 @@ const M_wisp = (() => {
     session(server);
     return new Response(null, { status: 101, webSocket: client });
   }
-  return { handleWisp, tcpTest };
+  return { handleWisp, tcpTest, blockedHost };
 })();
 
 /* ============ worker/key-worker.js ============ */
@@ -1984,6 +1984,101 @@ const M_api = (() => {
   return { ENV, setEnv, registerApi };
 })();
 
+/* ============ lite web proxy (works without a service worker) ============ */
+// /proxy?u=https://example.com fetches the page here, strips what stops it from showing in a frame, and rewrites its links to come back through
+// /proxy. It is what the single-file site (nex-velo.html) uses, because that file can't have a service worker. Simple and article-style sites work
+// well; sites that build their addresses in JavaScript (video sites, logins, web apps) may not. The Scramjet proxy on the main site handles those.
+const LITE_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
+const LITE_STRIP = ["content-security-policy", "content-security-policy-report-only", "x-frame-options", "strict-transport-security", "set-cookie", "set-cookie2", "content-encoding", "content-length", "transfer-encoding", "cross-origin-opener-policy", "cross-origin-embedder-policy", "permissions-policy", "report-to", "nel", "alt-svc"];
+const LITE_SKIP = /^(data:|blob:|javascript:|about:|mailto:|tel:|#)/i;
+
+function liteWrap(self, base, v) {
+  if (!v) return v;
+  v = String(v).trim();
+  if (LITE_SKIP.test(v)) return v;
+  try {
+    const u = new URL(v, base);
+    if (!/^https?:$/.test(u.protocol)) return v;
+    if (u.origin === self.origin && u.pathname === "/proxy") return v;
+    return self.origin + "/proxy?u=" + encodeURIComponent(u.href);
+  } catch { return v; }
+}
+const liteSrcset = (self, base, v) => String(v).split(",").map((p) => { const t = p.trim().split(/\s+/); t[0] = liteWrap(self, base, t[0]); return t.join(" "); }).join(", ");
+function liteCss(self, base, css) {
+  return css
+    .replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi, (m, q, u) => "url(" + q + liteWrap(self, base, u) + q + ")")
+    .replace(/@import\s+(['"])([^'"]+)\1/gi, (m, q, u) => "@import " + q + liteWrap(self, base, u) + q);
+}
+
+// Runs inside every proxied page: sends the page's address and title up to Nex.Velo, and keeps addresses made by scripts going through /proxy.
+const liteInject = (target) => "<script>(function(){var B=" + JSON.stringify(target).replace(/</g, "\\u003c") + ",P=location.origin+'/proxy?u=';" +
+  "function px(u){if(typeof u!=='string')return u;if(/^(data:|blob:|javascript:|about:|mailto:|tel:|#)/i.test(u)||u.indexOf(P)===0)return u;try{var a=new URL(u,B);return /^https?:$/.test(a.protocol)?P+encodeURIComponent(a.href):u}catch(e){return u}}" +
+  "var f=window.fetch;if(f)window.fetch=function(i,o){try{if(typeof i==='string')i=px(i);else if(i&&i.url)i=new Request(px(i.url),i)}catch(e){}return f.call(this,i,o)};" +
+  "var xo=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){arguments[1]=px(String(u));return xo.apply(this,arguments)};" +
+  "var wo=window.open;window.open=function(u){if(u)arguments[0]=px(String(u));return wo.apply(this,arguments)};" +
+  "document.addEventListener('click',function(e){var a=e.target&&e.target.closest&&e.target.closest('a[href]');if(a){var h=a.getAttribute('href');if(h&&px(h)!==h)a.setAttribute('href',px(h))}},true);" +
+  "document.addEventListener('submit',function(e){var fm=e.target;if(fm&&fm.getAttribute){var h=fm.getAttribute('action')||B;if(px(h)!==h)fm.setAttribute('action',px(h))}},true);" +
+  "function rep(){try{parent.postMessage({nvLite:'nav',url:B,title:document.title},'*')}catch(e){}}" +
+  "addEventListener('load',function(){rep();var t=document.querySelector('title');if(t)new MutationObserver(rep).observe(t,{childList:true})});" +
+  "addEventListener('keydown',function(e){try{parent.postMessage({nvLite:'key',k:{key:e.key,code:e.code,ctrlKey:e.ctrlKey,altKey:e.altKey,shiftKey:e.shiftKey,metaKey:e.metaKey}},'*')}catch(x){}},true);" +
+  "addEventListener('message',function(e){var d=e.data;if(d&&d.nvLite==='back')history.back();else if(d&&d.nvLite==='forward')history.forward()});" +
+  "})();</script>";
+
+async function liteProxy(request) {
+  const self = new URL(request.url);
+  const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*" };
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+  let target;
+  try { target = new URL(self.searchParams.get("u") || ""); }
+  catch { return new Response("Give a web address, like /proxy?u=https://example.com\n", { status: 400, headers: cors }); }
+  if (!/^https?:$/.test(target.protocol) || target.host === self.host || M_wisp.blockedHost(target.hostname))
+    return new Response("That address can't be opened here.\n", { status: 403, headers: cors });
+
+  const h = new Headers();
+  h.set("user-agent", request.headers.get("user-agent") || LITE_UA);
+  h.set("accept", request.headers.get("accept") || "*/*");
+  h.set("accept-language", request.headers.get("accept-language") || "en-US,en;q=0.9");
+  for (const k of ["range", "content-type"]) { const v = request.headers.get(k); if (v) h.set(k, v); }
+  const post = request.method === "POST";
+  let up;
+  try { up = await fetch(target.href, { method: post ? "POST" : "GET", headers: h, body: post ? await request.arrayBuffer() : undefined, redirect: "manual" }); }
+  catch (e) { return new Response("Couldn't reach " + target.host + ": " + String((e && e.message) || e) + "\n", { status: 502, headers: cors }); }
+
+  const loc = up.headers.get("location");
+  if (up.status >= 300 && up.status < 400 && loc) return new Response(null, { status: 302, headers: { ...cors, location: liteWrap(self, target.href, loc) } });
+
+  const out = new Headers(up.headers);
+  for (const k of LITE_STRIP) out.delete(k);
+  for (const [k, v] of Object.entries(cors)) out.set(k, v);
+  out.set("cross-origin-resource-policy", "cross-origin");
+  const type = (up.headers.get("content-type") || "").toLowerCase();
+
+  if (type.includes("text/html")) {
+    out.set("cache-control", "no-store");
+    const fix = (attr) => ({ element(e) { const v = e.getAttribute(attr); if (v) e.setAttribute(attr, liteWrap(self, target.href, v)); } });
+    const set = (attr) => ({ element(e) { const v = e.getAttribute(attr); if (v) e.setAttribute(attr, liteSrcset(self, target.href, v)); } });
+    return new HTMLRewriter()
+      .on("a[href], area[href], link[href]", fix("href"))
+      .on("script[src], img[src], source[src], iframe[src], frame[src], video[src], audio[src], embed[src], track[src], input[src]", fix("src"))
+      .on("img[data-src], source[data-src]", fix("data-src"))
+      .on("video[poster]", fix("poster"))
+      .on("form[action]", fix("action"))
+      .on("img[srcset], source[srcset]", set("srcset"))
+      .on("img[data-srcset], source[data-srcset]", set("data-srcset"))
+      .on("[integrity], [nonce]", { element(e) { e.removeAttribute("integrity"); e.removeAttribute("nonce"); } })
+      .on("base", { element(e) { e.remove(); } })
+      .on("meta", { element(e) {
+        const eq = (e.getAttribute("http-equiv") || "").toLowerCase();
+        if (eq === "content-security-policy") e.remove();
+        else if (eq === "refresh") { const c = e.getAttribute("content") || ""; e.setAttribute("content", c.replace(/(url\s*=\s*)(.+)$/i, (m, a, u) => a + liteWrap(self, target.href, u.replace(/^['"]|['"]$/g, "")))); }
+      } })
+      .on("head", { element(e) { e.prepend(liteInject(target.href), { html: true }); } })
+      .transform(new Response(up.body, { status: up.status, headers: out }));
+  }
+  if (type.includes("text/css")) return new Response(liteCss(self, target.href, await up.text()), { status: up.status, headers: out });
+  return new Response(up.body, { status: up.status, headers: out });
+}
+
 /* ============ entry point ============ */
 const { createApp } = M_cfapp;
 const { handleWisp } = M_wisp;
@@ -2000,6 +2095,8 @@ export default {
   async fetch(request, env, ctx) {
     setEnv(env);
     const { pathname } = new URL(request.url);
+
+    if (pathname === "/proxy") return liteProxy(request);
 
     if (pathname === "/wisp" || pathname.startsWith("/wisp/")) return handleWisp(request, env);
     if (pathname.startsWith("/api/admin/") || pathname.startsWith("/api/keys/")) return keyWorker.fetch(request, env, ctx);
